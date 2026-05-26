@@ -27,6 +27,7 @@ interface Runtime {
 interface StoredPlan {
   rawInput: string
   settings: Settings
+  savedExercises: Exercise[]
 }
 
 interface PanelPosition {
@@ -87,6 +88,7 @@ function loadPlan(): StoredPlan {
   const fallback: StoredPlan = {
     rawInput: '',
     settings: { ...defaultSettings },
+    savedExercises: [],
   }
 
   try {
@@ -95,8 +97,14 @@ function loadPlan(): StoredPlan {
       return fallback
     }
     const parsed = JSON.parse(saved) as Partial<StoredPlan>
+    const savedExercises = Array.isArray(parsed.savedExercises)
+      ? parsed.savedExercises.filter(isStoredExercise)
+      : []
     return {
-      rawInput: typeof parsed.rawInput === 'string' ? parsed.rawInput : '',
+      rawInput:
+        typeof parsed.rawInput === 'string'
+          ? parsed.rawInput
+          : serializeExercises(savedExercises),
       settings: {
         beepDuration:
           typeof parsed.settings?.beepDuration === 'number'
@@ -107,6 +115,7 @@ function loadPlan(): StoredPlan {
             ? parsed.settings.pauseDuringRest
             : defaultSettings.pauseDuringRest,
       },
+      savedExercises,
     }
   } catch {
     return fallback
@@ -114,13 +123,41 @@ function loadPlan(): StoredPlan {
 }
 
 function savePlan(): void {
+  const parseResult = parsePlan(rawInput)
   localStorage.setItem(
     getStorageKey(),
     JSON.stringify({
       rawInput,
       settings,
+      savedExercises: parseResult.errors.length === 0 ? parseResult.exercises : exercises,
     } satisfies StoredPlan),
   )
+}
+
+function isStoredExercise(value: unknown): value is Exercise {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const exercise = value as Partial<Exercise>
+  return (
+    typeof exercise.id === 'string' &&
+    typeof exercise.name === 'string' &&
+    typeof exercise.start === 'number' &&
+    typeof exercise.end === 'number' &&
+    typeof exercise.sets === 'number' &&
+    typeof exercise.minReps === 'number' &&
+    typeof exercise.maxReps === 'number' &&
+    typeof exercise.restSeconds === 'number'
+  )
+}
+
+function serializeExercises(items: Exercise[]): string {
+  return items
+    .map(
+      exercise =>
+        `${exercise.name} ${formatTimestamp(exercise.start)}-${formatTimestamp(exercise.end)} ${exercise.sets}x${exercise.minReps}${exercise.maxReps === exercise.minReps ? '' : `-${exercise.maxReps}`} rest${exercise.restSeconds}`,
+    )
+    .join('\n')
 }
 
 function loadPreferences(): Preferences {
@@ -246,9 +283,11 @@ function setupPanelDrag(header: HTMLElement, panel: HTMLElement): void {
 }
 
 function exportPlan(): void {
+  const parseResult = parsePlan(rawInput)
   const payload: StoredPlan = {
     rawInput,
     settings,
+    savedExercises: parseResult.errors.length === 0 ? parseResult.exercises : exercises,
   }
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: 'application/json;charset=utf-8',
@@ -263,11 +302,15 @@ function exportPlan(): void {
 async function importPlanFromFile(file: File): Promise<void> {
   const text = await file.text()
   const parsed = JSON.parse(text) as Partial<StoredPlan>
-  if (typeof parsed.rawInput !== 'string') {
+  const savedExercises = Array.isArray(parsed.savedExercises)
+    ? parsed.savedExercises.filter(isStoredExercise)
+    : []
+  if (typeof parsed.rawInput !== 'string' && savedExercises.length === 0) {
     throw new Error('Invalid plan file')
   }
 
-  rawInput = parsed.rawInput
+  rawInput =
+    typeof parsed.rawInput === 'string' ? parsed.rawInput : serializeExercises(savedExercises)
   settings = {
     beepDuration:
       typeof parsed.settings?.beepDuration === 'number'
@@ -618,11 +661,11 @@ function injectStyle(): void {
   style.textContent = `
     #${panelId} {
       position: fixed;
-      right: 18px;
-      top: 96px;
+      right: 14px;
+      top: 88px;
       z-index: 2147483647;
-      width: min(360px, calc(100vw - 32px));
-      max-height: calc(100vh - 128px);
+      width: min(328px, calc(100vw - 28px));
+      max-height: calc(100vh - 104px);
       color: #f6f7f9;
       background: rgba(22, 24, 29, 0.94);
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -644,8 +687,8 @@ function injectStyle(): void {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      padding: 10px 12px;
+      gap: 6px;
+      padding: 7px 9px;
       background: rgba(255, 255, 255, 0.06);
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       cursor: grab;
@@ -661,18 +704,22 @@ function injectStyle(): void {
     }
     .bft-body {
       display: grid;
-      gap: 10px;
-      padding: 12px;
-      max-height: calc(100vh - 180px);
+      gap: 7px;
+      padding: 9px;
+      max-height: calc(100vh - 150px);
       overflow: auto;
     }
     .bft-collapsed .bft-body {
       display: none;
     }
+    .bft-collapsed {
+      width: auto;
+      min-width: 118px;
+    }
     .bft-status {
       display: grid;
-      gap: 4px;
-      padding: 9px;
+      gap: 3px;
+      padding: 7px;
       background: rgba(255, 255, 255, 0.07);
       border-radius: 6px;
     }
@@ -682,7 +729,7 @@ function injectStyle(): void {
     .bft-row {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       flex-wrap: wrap;
     }
     .bft-row > * {
@@ -693,13 +740,13 @@ function injectStyle(): void {
     }
     .bft-input {
       width: 100%;
-      min-height: 116px;
+      min-height: 86px;
       resize: vertical;
       color: #f6f7f9;
       background: rgba(0, 0, 0, 0.24);
       border: 1px solid rgba(255, 255, 255, 0.16);
       border-radius: 6px;
-      padding: 9px;
+      padding: 7px;
       outline: none;
     }
     .bft-input:focus,
@@ -707,13 +754,14 @@ function injectStyle(): void {
       border-color: #4cc9a7;
     }
     .bft-button {
-      min-height: 30px;
+      min-height: 26px;
       border: 1px solid rgba(255, 255, 255, 0.14);
       border-radius: 6px;
       color: #f6f7f9;
       background: rgba(255, 255, 255, 0.1);
-      padding: 5px 9px;
+      padding: 3px 7px;
       cursor: pointer;
+      font-size: 12px;
     }
     .bft-button:hover {
       background: rgba(255, 255, 255, 0.16);
@@ -737,12 +785,12 @@ function injectStyle(): void {
       background: rgba(255, 114, 114, 0.16);
     }
     .bft-select {
-      min-height: 30px;
+      min-height: 28px;
       color: #f6f7f9;
       background: rgba(0, 0, 0, 0.24);
       border: 1px solid rgba(255, 255, 255, 0.16);
       border-radius: 6px;
-      padding: 4px 7px;
+      padding: 3px 6px;
     }
     .bft-check {
       display: inline-flex;
@@ -752,7 +800,7 @@ function injectStyle(): void {
     }
     .bft-list {
       display: grid;
-      gap: 6px;
+      gap: 5px;
       margin: 0;
       padding: 0;
       list-style: none;
@@ -764,7 +812,7 @@ function injectStyle(): void {
       color: inherit;
       text-align: left;
       cursor: pointer;
-      padding: 7px 8px;
+      padding: 6px 7px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.05);
@@ -789,12 +837,12 @@ function injectStyle(): void {
     }
     @media (max-width: 720px) {
       #${panelId} {
-        left: 8px;
-        right: 8px;
+        left: 6px;
+        right: 6px;
         top: auto;
-        bottom: max(8px, env(safe-area-inset-bottom));
+        bottom: max(0px, env(safe-area-inset-bottom));
         width: auto;
-        max-height: min(68vh, 520px);
+        max-height: min(72dvh, 540px);
         border-radius: 8px 8px 0 0;
       }
       .bft-header {
@@ -802,19 +850,38 @@ function injectStyle(): void {
         touch-action: auto;
       }
       .bft-body {
-        gap: 8px;
-        padding: 10px;
-        max-height: calc(min(68vh, 520px) - 48px);
+        gap: 7px;
+        padding: 8px;
+        max-height: calc(min(72dvh, 540px) - 42px);
       }
       .bft-input {
-        min-height: 88px;
+        min-height: 76px;
       }
       .bft-button,
       .bft-select {
-        min-height: 36px;
+        min-height: 34px;
+      }
+      .bft-tool-row .bft-button,
+      .bft-control-row .bft-button {
+        flex: 1 1 calc(33.333% - 6px);
+        padding: 5px 6px;
+        font-size: 12px;
+      }
+      .bft-control-row .bft-button {
+        flex-basis: calc(50% - 6px);
+      }
+      .bft-status {
+        padding: 7px;
       }
       .bft-row {
         gap: 6px;
+      }
+      .bft-collapsed {
+        left: auto;
+        right: 8px;
+        width: auto;
+        min-width: 104px;
+        border-radius: 8px;
       }
     }
   `
@@ -921,7 +988,7 @@ function render(options: RenderOptions = {}): void {
   })
 
   const timeButtons = document.createElement('div')
-  timeButtons.className = 'bft-row'
+  timeButtons.className = 'bft-row bft-tool-row'
   timeButtons.append(
     createButton('插入开始', () => insertCurrentTime('start')),
     createButton('插入结束', () => insertCurrentTime('end')),
@@ -996,7 +1063,7 @@ function render(options: RenderOptions = {}): void {
   startPickerRow.append(startPickerLabel)
 
   const controls = document.createElement('div')
-  controls.className = 'bft-row'
+  controls.className = 'bft-row bft-control-row'
   const startButton = createButton('开始训练', startTraining, 'bft-primary')
   startButton.disabled = exercises.length === 0
   const completeButton = createButton('完成本组', completeSet, 'bft-primary')
