@@ -48,6 +48,7 @@ let exercises: Exercise[] = []
 let rawInput = ''
 let settings: Settings = { ...defaultSettings }
 let collapsed = false
+let selectedStartIndex = 0
 let runtime: Runtime = {
   mode: 'idle',
   exerciseIndex: 0,
@@ -247,9 +248,10 @@ function startTraining(): void {
   if (exercises.length === 0) {
     return
   }
+  selectedStartIndex = Math.min(selectedStartIndex, exercises.length - 1)
   runtime = {
     mode: 'exercise',
-    exerciseIndex: 0,
+    exerciseIndex: selectedStartIndex,
     setIndex: 0,
     restRemaining: 0,
     beforePauseMode: 'exercise',
@@ -558,14 +560,24 @@ function injectStyle(): void {
     .bft-item {
       display: grid;
       gap: 2px;
+      width: 100%;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
       padding: 7px 8px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.05);
     }
+    .bft-item:hover {
+      background: rgba(255, 255, 255, 0.09);
+    }
     .bft-item-active {
       border-color: rgba(76, 201, 167, 0.85);
       background: rgba(76, 201, 167, 0.12);
+    }
+    .bft-item-selected {
+      border-color: rgba(255, 213, 97, 0.78);
     }
     .bft-error {
       display: grid;
@@ -629,6 +641,9 @@ function render(options: RenderOptions = {}): void {
 
   const parseResult = parsePlan(rawInput)
   exercises = parseResult.exercises
+  if (selectedStartIndex >= exercises.length) {
+    selectedStartIndex = Math.max(0, exercises.length - 1)
+  }
   if (runtime.exerciseIndex >= exercises.length) {
     runtime.exerciseIndex = 0
     runtime.setIndex = 0
@@ -729,6 +744,33 @@ function render(options: RenderOptions = {}): void {
   pauseLabel.append(pauseInput, document.createTextNode('休息暂停视频'))
   settingsRow.append(beepLabel, pauseLabel)
 
+  const startPickerRow = document.createElement('div')
+  startPickerRow.className = 'bft-row'
+  const startPickerLabel = document.createElement('label')
+  startPickerLabel.className = 'bft-row bft-grow'
+  const startPickerText = document.createElement('span')
+  startPickerText.textContent = '从动作'
+  const startPicker = document.createElement('select')
+  startPicker.className = 'bft-select bft-grow'
+  startPicker.disabled = exercises.length === 0 || runtime.mode !== 'idle'
+  exercises.forEach((exercise, index) => {
+    const option = document.createElement('option')
+    option.value = String(index)
+    option.textContent = `${index + 1}. ${exercise.name}`
+    option.selected = index === selectedStartIndex
+    startPicker.append(option)
+  })
+  startPicker.addEventListener('change', () => {
+    selectedStartIndex = Number(startPicker.value)
+    if (runtime.mode === 'idle') {
+      runtime.exerciseIndex = selectedStartIndex
+      runtime.setIndex = 0
+    }
+    render()
+  })
+  startPickerLabel.append(startPickerText, startPicker)
+  startPickerRow.append(startPickerLabel)
+
   const controls = document.createElement('div')
   controls.className = 'bft-row'
   const startButton = createButton('开始训练', startTraining, 'bft-primary')
@@ -743,7 +785,7 @@ function render(options: RenderOptions = {}): void {
     clearRestTimer()
     runtime = {
       mode: 'idle',
-      exerciseIndex: 0,
+      exerciseIndex: selectedStartIndex,
       setIndex: 0,
       restRemaining: 0,
       beforePauseMode: 'idle',
@@ -756,19 +798,40 @@ function render(options: RenderOptions = {}): void {
   const list = document.createElement('ul')
   list.className = 'bft-list'
   exercises.forEach((exercise, index) => {
-    const item = document.createElement('li')
-    item.className =
-      index === runtime.exerciseIndex && runtime.mode !== 'idle' ? 'bft-item bft-item-active' : 'bft-item'
+    const itemWrapper = document.createElement('li')
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.className = [
+      'bft-item',
+      index === runtime.exerciseIndex && runtime.mode !== 'idle' ? 'bft-item-active' : '',
+      index === selectedStartIndex ? 'bft-item-selected' : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+    item.disabled = runtime.mode !== 'idle' && runtime.mode !== 'complete'
+    item.addEventListener('click', () => {
+      selectedStartIndex = index
+      runtime.exerciseIndex = index
+      runtime.setIndex = 0
+      if (video) {
+        video.currentTime = exercise.start
+      }
+      if (runtime.mode === 'complete') {
+        runtime.mode = 'idle'
+      }
+      render()
+    })
     const name = document.createElement('strong')
     name.textContent = exercise.name
     const meta = document.createElement('span')
     meta.className = 'bft-muted'
     meta.textContent = `${formatTimestamp(exercise.start)}-${formatTimestamp(exercise.end)} · ${exercise.sets} 组 · ${exercise.minReps}${exercise.maxReps === exercise.minReps ? '' : `-${exercise.maxReps}`} 次 · 休息 ${exercise.restSeconds}s`
     item.append(name, meta)
-    list.append(item)
+    itemWrapper.append(item)
+    list.append(itemWrapper)
   })
 
-  body.append(status, textarea, timeButtons, settingsRow, controls)
+  body.append(status, textarea, timeButtons, settingsRow, startPickerRow, controls)
 
   if (parseResult.errors.length > 0) {
     const errorBox = document.createElement('div')
