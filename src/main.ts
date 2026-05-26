@@ -40,6 +40,8 @@ const defaultSettings: Settings = {
   beepDuration: 2,
   pauseDuringRest: true,
 }
+const timestampPattern =
+  String.raw`(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d+)?|(?:(?:\d+\s*时)?(?:\d+\s*分)?\d+(?:\.\d+)?\s*秒|(?:\d+\s*时)?\d+\s*分(?:\s*\d+(?:\.\d+)?\s*秒)?)`
 
 let video: HTMLVideoElement | null = null
 let exercises: Exercise[] = []
@@ -158,7 +160,7 @@ function parsePlan(input: string): ParseResult {
     }
 
     const timeMatch = line.match(
-      /(?<start>(?:(?:\d+\s*时)?(?:\d+\s*分)?\d+(?:\.\d+)?\s*秒?)|(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d+)?)\s*(?:-|~|至|到)\s*(?<end>(?:(?:\d+\s*时)?(?:\d+\s*分)?\d+(?:\.\d+)?\s*秒?)|(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d+)?)/,
+      new RegExp(`(?<start>${timestampPattern})\\s*(?:-|~|至|到)\\s*(?<end>${timestampPattern})`),
     )
     const setMatch = line.match(/(?<sets>\d+)\s*(?:x|X|×|组)\s*(?<min>\d+)(?:\s*[-~]\s*(?<max>\d+))?/)
     const restMatch = line.match(/(?:rest|休息)\s*(?<rest>\d+)/i)
