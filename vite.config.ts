@@ -3,10 +3,13 @@ import { defineConfig, type Plugin } from 'vite'
 
 const userscriptBanner = `// ==UserScript==
 // @name         Bilibili Fitness Timer
-// @namespace    https://github.com/ryan/bili-fitness-timer
+// @namespace    https://github.com/RyanChouHua/bili-fitness-timer
 // @version      0.1.0
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/video/*
+// @downloadURL  https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-fitness-timer.user.js
+// @updateURL    https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-fitness-timer.user.js
+// @supportURL   https://github.com/RyanChouHua/bili-fitness-timer/issues
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==

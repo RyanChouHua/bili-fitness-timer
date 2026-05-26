@@ -1,0 +1,1043 @@
+// ==UserScript==
+// @name         Bilibili Fitness Timer
+// @namespace    https://github.com/RyanChouHua/bili-fitness-timer
+// @version      0.1.0
+// @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
+// @match        https://www.bilibili.com/video/*
+// @downloadURL  https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-fitness-timer.user.js
+// @updateURL    https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-fitness-timer.user.js
+// @supportURL   https://github.com/RyanChouHua/bili-fitness-timer/issues
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+
+(function() {
+  "use strict";
+  const panelId = "bili-fitness-timer-panel";
+  const styleId = "bili-fitness-timer-style";
+  const preferencesStorageKey = "bili-fitness-timer:preferences";
+  const defaultSettings = {
+    beepDuration: 2,
+    pauseDuringRest: true
+  };
+  const timestampPattern = String.raw`(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d+)?|(?:(?:\d+\s*时)?(?:\d+\s*分)?\d+(?:\.\d+)?\s*秒|(?:\d+\s*时)?\d+\s*分(?:\s*\d+(?:\.\d+)?\s*秒)?)`;
+  let video = null;
+  let exercises = [];
+  let rawInput = "";
+  let settings = { ...defaultSettings };
+  let collapsed = false;
+  let selectedStartIndex = 0;
+  let panelPosition = null;
+  let runtime = {
+    mode: "idle",
+    exerciseIndex: 0,
+    setIndex: 0,
+    restRemaining: 0,
+    beforePauseMode: "idle"
+  };
+  let restTimerId;
+  let activeStorageKey = "";
+  function getStorageKey() {
+    var _a;
+    const bvid = (_a = location.pathname.match(/\/video\/(BV[\w]+)/)) == null ? void 0 : _a[1];
+    return `bili-fitness-timer:${bvid ?? location.pathname}`;
+  }
+  function loadPlan() {
+    var _a, _b;
+    const fallback = {
+      rawInput: "",
+      settings: { ...defaultSettings },
+      savedExercises: []
+    };
+    try {
+      const saved = localStorage.getItem(getStorageKey());
+      if (!saved) {
+        return fallback;
+      }
+      const parsed = JSON.parse(saved);
+      const savedExercises = Array.isArray(parsed.savedExercises) ? parsed.savedExercises.filter(isStoredExercise) : [];
+      return {
+        rawInput: typeof parsed.rawInput === "string" ? parsed.rawInput : serializeExercises(savedExercises),
+        settings: {
+          beepDuration: typeof ((_a = parsed.settings) == null ? void 0 : _a.beepDuration) === "number" ? parsed.settings.beepDuration : defaultSettings.beepDuration,
+          pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : defaultSettings.pauseDuringRest
+        },
+        savedExercises
+      };
+    } catch {
+      return fallback;
+    }
+  }
+  function savePlan() {
+    const parseResult = parsePlan(rawInput);
+    localStorage.setItem(
+      getStorageKey(),
+      JSON.stringify({
+        rawInput,
+        settings,
+        savedExercises: parseResult.errors.length === 0 ? parseResult.exercises : exercises
+      })
+    );
+  }
+  function isStoredExercise(value) {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+    const exercise = value;
+    return typeof exercise.id === "string" && typeof exercise.name === "string" && typeof exercise.start === "number" && typeof exercise.end === "number" && typeof exercise.sets === "number" && typeof exercise.minReps === "number" && typeof exercise.maxReps === "number" && typeof exercise.restSeconds === "number";
+  }
+  function serializeExercises(items) {
+    return items.map(
+      (exercise) => `${exercise.name} ${formatTimestamp(exercise.start)}-${formatTimestamp(exercise.end)} ${exercise.sets}x${exercise.minReps}${exercise.maxReps === exercise.minReps ? "" : `-${exercise.maxReps}`} rest${exercise.restSeconds}`
+    ).join("\n");
+  }
+  function loadPreferences() {
+    try {
+      const saved = localStorage.getItem(preferencesStorageKey);
+      if (!saved) {
+        return { panelPosition: null };
+      }
+      const parsed = JSON.parse(saved);
+      const position = parsed.panelPosition;
+      if (position && typeof position.left === "number" && typeof position.top === "number") {
+        return {
+          panelPosition: {
+            left: position.left,
+            top: position.top
+          }
+        };
+      }
+    } catch {
+      return { panelPosition: null };
+    }
+    return { panelPosition: null };
+  }
+  function savePreferences() {
+    localStorage.setItem(
+      preferencesStorageKey,
+      JSON.stringify({
+        panelPosition
+      })
+    );
+  }
+  function isMobileViewport() {
+    return window.matchMedia("(max-width: 720px)").matches;
+  }
+  function clampPanelPosition(position, panel) {
+    const margin = 10;
+    const rect = panel.getBoundingClientRect();
+    const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+    const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
+    return {
+      left: Math.min(Math.max(position.left, margin), maxLeft),
+      top: Math.min(Math.max(position.top, margin), maxTop)
+    };
+  }
+  function applyPanelPosition(panel) {
+    if (isMobileViewport()) {
+      panel.style.left = "";
+      panel.style.right = "";
+      panel.style.top = "";
+      panel.style.bottom = "";
+      return;
+    }
+    if (!panelPosition) {
+      panel.style.left = "";
+      panel.style.right = "";
+      panel.style.top = "";
+      panel.style.bottom = "";
+      return;
+    }
+    const nextPosition = clampPanelPosition(panelPosition, panel);
+    panelPosition = nextPosition;
+    panel.style.left = `${nextPosition.left}px`;
+    panel.style.top = `${nextPosition.top}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+  }
+  function setupPanelDrag(header, panel) {
+    header.addEventListener("pointerdown", (event) => {
+      if (isMobileViewport() || event.button !== 0) {
+        return;
+      }
+      if (event.target.closest("button")) {
+        return;
+      }
+      const startRect = panel.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      header.setPointerCapture(event.pointerId);
+      header.classList.add("bft-header-dragging");
+      const handleMove = (moveEvent) => {
+        const next = clampPanelPosition(
+          {
+            left: startRect.left + moveEvent.clientX - startX,
+            top: startRect.top + moveEvent.clientY - startY
+          },
+          panel
+        );
+        panelPosition = next;
+        panel.style.left = `${next.left}px`;
+        panel.style.top = `${next.top}px`;
+        panel.style.right = "auto";
+        panel.style.bottom = "auto";
+      };
+      const handleUp = (upEvent) => {
+        header.releasePointerCapture(upEvent.pointerId);
+        header.classList.remove("bft-header-dragging");
+        header.removeEventListener("pointermove", handleMove);
+        header.removeEventListener("pointerup", handleUp);
+        header.removeEventListener("pointercancel", handleUp);
+        savePreferences();
+      };
+      header.addEventListener("pointermove", handleMove);
+      header.addEventListener("pointerup", handleUp);
+      header.addEventListener("pointercancel", handleUp);
+    });
+  }
+  function exportPlan() {
+    const parseResult = parsePlan(rawInput);
+    const payload = {
+      rawInput,
+      settings,
+      savedExercises: parseResult.errors.length === 0 ? parseResult.exercises : exercises
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json;charset=utf-8"
+    });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `bili-fitness-timer-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+  async function importPlanFromFile(file) {
+    var _a, _b;
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const savedExercises = Array.isArray(parsed.savedExercises) ? parsed.savedExercises.filter(isStoredExercise) : [];
+    if (typeof parsed.rawInput !== "string" && savedExercises.length === 0) {
+      throw new Error("Invalid plan file");
+    }
+    rawInput = typeof parsed.rawInput === "string" ? parsed.rawInput : serializeExercises(savedExercises);
+    settings = {
+      beepDuration: typeof ((_a = parsed.settings) == null ? void 0 : _a.beepDuration) === "number" ? parsed.settings.beepDuration : settings.beepDuration,
+      pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : settings.pauseDuringRest
+    };
+    selectedStartIndex = 0;
+    runtime = {
+      mode: "idle",
+      exerciseIndex: 0,
+      setIndex: 0,
+      restRemaining: 0,
+      beforePauseMode: "idle"
+    };
+    savePlan();
+    render();
+  }
+  function openImportPicker() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json,.json";
+    input.addEventListener("change", () => {
+      var _a;
+      const file = (_a = input.files) == null ? void 0 : _a[0];
+      if (!file) {
+        return;
+      }
+      void importPlanFromFile(file).catch(() => {
+        window.alert("导入失败：请选择由健身计时器导出的 JSON 文件");
+      });
+    });
+    input.click();
+  }
+  function parseTimestamp(value) {
+    const text = value.trim();
+    const chinese = text.match(/^(?:(\d+)\s*时)?(?:(\d+)\s*分)?(?:(\d+(?:\.\d+)?)\s*秒?)$/);
+    if (chinese && (chinese[1] || chinese[2] || chinese[3])) {
+      return Number(chinese[1] ?? 0) * 3600 + Number(chinese[2] ?? 0) * 60 + Number(chinese[3] ?? 0);
+    }
+    const parts = text.split(":");
+    if (parts.length < 2 || parts.length > 3) {
+      return null;
+    }
+    if (parts.some((part) => part.trim() === "" || Number.isNaN(Number(part)))) {
+      return null;
+    }
+    const numbers = parts.map(Number);
+    if (numbers.length === 2) {
+      return numbers[0] * 60 + numbers[1];
+    }
+    return numbers[0] * 3600 + numbers[1] * 60 + numbers[2];
+  }
+  function formatTimestamp(seconds) {
+    const safeSeconds = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(safeSeconds / 3600);
+    const m = Math.floor(safeSeconds % 3600 / 60);
+    const s = safeSeconds % 60;
+    if (h > 0) {
+      return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+  function parsePlan(input) {
+    const errors = [];
+    const parsedExercises = [];
+    const lines = input.split(/\r?\n/);
+    lines.forEach((rawLine, index) => {
+      const line = rawLine.trim();
+      if (!line) {
+        return;
+      }
+      const timeMatch = line.match(
+        new RegExp(`(?<start>${timestampPattern})\\s*(?:-|~|至|到)\\s*(?<end>${timestampPattern})`)
+      );
+      const setMatch = line.match(/(?<sets>\d+)\s*(?:x|X|×|组)\s*(?<min>\d+)(?:\s*[-~]\s*(?<max>\d+))?/);
+      const restMatch = line.match(/(?:rest|休息)\s*(?<rest>\d+)/i);
+      if (!(timeMatch == null ? void 0 : timeMatch.groups)) {
+        errors.push(`第 ${index + 1} 行：缺少时间段，例如 00:12-00:28`);
+        return;
+      }
+      if (!(setMatch == null ? void 0 : setMatch.groups)) {
+        errors.push(`第 ${index + 1} 行：缺少组数和次数，例如 3x8-12`);
+        return;
+      }
+      const start = parseTimestamp(timeMatch.groups.start);
+      const end = parseTimestamp(timeMatch.groups.end);
+      if (start === null || end === null) {
+        errors.push(`第 ${index + 1} 行：时间戳格式无法识别`);
+        return;
+      }
+      if (end <= start) {
+        errors.push(`第 ${index + 1} 行：结束时间必须晚于开始时间`);
+        return;
+      }
+      const beforeTime = line.slice(0, timeMatch.index).trim();
+      const name = beforeTime || `动作 ${parsedExercises.length + 1}`;
+      const sets = Number(setMatch.groups.sets);
+      const minReps = Number(setMatch.groups.min);
+      const maxReps = Number(setMatch.groups.max ?? setMatch.groups.min);
+      const restSeconds = (restMatch == null ? void 0 : restMatch.groups) ? Number(restMatch.groups.rest) : 45;
+      if (sets <= 0 || minReps <= 0 || maxReps < minReps || restSeconds < 0) {
+        errors.push(`第 ${index + 1} 行：组数、次数或休息时间无效`);
+        return;
+      }
+      parsedExercises.push({
+        id: `${index}-${start}-${end}`,
+        name,
+        start,
+        end,
+        sets,
+        minReps,
+        maxReps,
+        restSeconds
+      });
+    });
+    return {
+      exercises: parsedExercises,
+      errors
+    };
+  }
+  function getCurrentExercise() {
+    return exercises[runtime.exerciseIndex] ?? null;
+  }
+  function clearRestTimer() {
+    if (restTimerId !== void 0) {
+      window.clearInterval(restTimerId);
+      restTimerId = void 0;
+    }
+  }
+  function playCurrentExercise() {
+    const currentVideo = video;
+    const exercise = getCurrentExercise();
+    if (!currentVideo || !exercise) {
+      return;
+    }
+    clearRestTimer();
+    runtime.mode = "exercise";
+    runtime.restRemaining = 0;
+    currentVideo.currentTime = exercise.start;
+    void currentVideo.play().catch(() => {
+      render();
+    });
+    render();
+  }
+  function startTraining() {
+    if (exercises.length === 0) {
+      return;
+    }
+    selectedStartIndex = Math.min(selectedStartIndex, exercises.length - 1);
+    runtime = {
+      mode: "exercise",
+      exerciseIndex: selectedStartIndex,
+      setIndex: 0,
+      restRemaining: 0,
+      beforePauseMode: "exercise"
+    };
+    playCurrentExercise();
+  }
+  function completeSet() {
+    const currentVideo = video;
+    const exercise = getCurrentExercise();
+    if (!exercise) {
+      return;
+    }
+    if (settings.pauseDuringRest) {
+      currentVideo == null ? void 0 : currentVideo.pause();
+    }
+    runtime.mode = "rest";
+    runtime.restRemaining = exercise.restSeconds;
+    startRestCountdown();
+    render();
+  }
+  function startRestCountdown() {
+    clearRestTimer();
+    restTimerId = window.setInterval(() => {
+      if (runtime.mode !== "rest") {
+        clearRestTimer();
+        return;
+      }
+      runtime.restRemaining -= 1;
+      if (runtime.restRemaining <= 0) {
+        skipRest(true);
+        return;
+      }
+      render();
+    }, 1e3);
+  }
+  function moveToNextUnit() {
+    const exercise = getCurrentExercise();
+    if (!exercise) {
+      runtime.mode = "complete";
+      return false;
+    }
+    if (runtime.setIndex + 1 < exercise.sets) {
+      runtime.setIndex += 1;
+      return true;
+    }
+    if (runtime.exerciseIndex + 1 < exercises.length) {
+      runtime.exerciseIndex += 1;
+      runtime.setIndex = 0;
+      return true;
+    }
+    runtime.mode = "complete";
+    return false;
+  }
+  function skipRest(playBeep = false) {
+    clearRestTimer();
+    if (playBeep) {
+      void beep(settings.beepDuration);
+    }
+    if (moveToNextUnit()) {
+      playCurrentExercise();
+    } else {
+      video == null ? void 0 : video.pause();
+      render();
+    }
+  }
+  function togglePause() {
+    if (runtime.mode === "paused") {
+      runtime.mode = runtime.beforePauseMode;
+      if (runtime.mode === "exercise") {
+        void (video == null ? void 0 : video.play());
+      } else if (runtime.mode === "rest") {
+        startRestCountdown();
+      }
+      render();
+      return;
+    }
+    if (runtime.mode === "idle" || runtime.mode === "complete") {
+      return;
+    }
+    runtime.beforePauseMode = runtime.mode;
+    runtime.mode = "paused";
+    clearRestTimer();
+    video == null ? void 0 : video.pause();
+    render();
+  }
+  async function beep(durationSeconds) {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) {
+      return;
+    }
+    const context = new AudioContextConstructor();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.value = 880;
+    gain.gain.setValueAtTime(1e-3, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.25, context.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(1e-3, context.currentTime + durationSeconds);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + durationSeconds);
+    await new Promise((resolve) => window.setTimeout(resolve, durationSeconds * 1e3 + 80));
+    await context.close();
+  }
+  function setLoopGuard() {
+    video == null ? void 0 : video.addEventListener("timeupdate", () => {
+      if (!video || runtime.mode !== "exercise") {
+        return;
+      }
+      const exercise = getCurrentExercise();
+      if (!exercise) {
+        return;
+      }
+      if (video.currentTime >= exercise.end || video.currentTime < exercise.start - 0.25) {
+        video.currentTime = exercise.start;
+        if (video.paused) {
+          void video.play();
+        }
+      }
+    });
+  }
+  function waitForVideo() {
+    const existing = document.querySelector("video");
+    if (existing) {
+      return Promise.resolve(existing);
+    }
+    return new Promise((resolve) => {
+      const observer = new MutationObserver(() => {
+        const found = document.querySelector("video");
+        if (found) {
+          observer.disconnect();
+          resolve(found);
+        }
+      });
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true
+      });
+    });
+  }
+  function injectStyle() {
+    if (document.getElementById(styleId)) {
+      return;
+    }
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+    #${panelId} {
+      position: fixed;
+      right: 14px;
+      top: 88px;
+      z-index: 2147483647;
+      width: min(328px, calc(100vw - 28px));
+      max-height: calc(100vh - 104px);
+      color: #f6f7f9;
+      background: rgba(22, 24, 29, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.34);
+      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+    #${panelId} * {
+      box-sizing: border-box;
+    }
+    #${panelId} button,
+    #${panelId} select,
+    #${panelId} textarea,
+    #${panelId} input {
+      font: inherit;
+    }
+    .bft-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 7px 9px;
+      background: rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+    .bft-header-dragging {
+      cursor: grabbing;
+    }
+    .bft-title {
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .bft-body {
+      display: grid;
+      gap: 7px;
+      padding: 9px;
+      max-height: calc(100vh - 150px);
+      overflow: auto;
+    }
+    .bft-collapsed .bft-body {
+      display: none;
+    }
+    .bft-collapsed {
+      width: auto;
+      min-width: 118px;
+    }
+    .bft-status {
+      display: grid;
+      gap: 3px;
+      padding: 7px;
+      background: rgba(255, 255, 255, 0.07);
+      border-radius: 6px;
+    }
+    .bft-muted {
+      color: rgba(246, 247, 249, 0.68);
+    }
+    .bft-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .bft-row > * {
+      flex: 0 0 auto;
+    }
+    .bft-grow {
+      flex: 1 1 120px;
+    }
+    .bft-input {
+      width: 100%;
+      min-height: 86px;
+      resize: vertical;
+      color: #f6f7f9;
+      background: rgba(0, 0, 0, 0.24);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 6px;
+      padding: 7px;
+      outline: none;
+    }
+    .bft-input:focus,
+    .bft-select:focus {
+      border-color: #4cc9a7;
+    }
+    .bft-button {
+      min-height: 26px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 6px;
+      color: #f6f7f9;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 3px 7px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .bft-button:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+    .bft-button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .bft-primary {
+      color: #07120f;
+      background: #4cc9a7;
+      border-color: #4cc9a7;
+      font-weight: 700;
+    }
+    .bft-primary:hover {
+      background: #6dd8ba;
+    }
+    .bft-danger {
+      color: #ffd9d9;
+      border-color: rgba(255, 114, 114, 0.42);
+      background: rgba(255, 114, 114, 0.16);
+    }
+    .bft-select {
+      min-height: 28px;
+      color: #f6f7f9;
+      background: rgba(0, 0, 0, 0.24);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 6px;
+      padding: 3px 6px;
+    }
+    .bft-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: rgba(246, 247, 249, 0.82);
+    }
+    .bft-list {
+      display: grid;
+      gap: 5px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .bft-item {
+      display: grid;
+      gap: 2px;
+      width: 100%;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      padding: 6px 7px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .bft-item:hover {
+      background: rgba(255, 255, 255, 0.09);
+    }
+    .bft-item-active {
+      border-color: rgba(76, 201, 167, 0.85);
+      background: rgba(76, 201, 167, 0.12);
+    }
+    .bft-item-selected {
+      border-color: rgba(255, 213, 97, 0.78);
+    }
+    .bft-error {
+      display: grid;
+      gap: 3px;
+      color: #ffb9b9;
+      padding: 8px;
+      border-radius: 6px;
+      background: rgba(255, 81, 81, 0.12);
+    }
+    @media (max-width: 720px) {
+      #${panelId} {
+        left: 6px;
+        right: 6px;
+        top: auto;
+        bottom: max(0px, env(safe-area-inset-bottom));
+        width: auto;
+        max-height: min(72dvh, 540px);
+        border-radius: 8px 8px 0 0;
+      }
+      .bft-header {
+        cursor: default;
+        touch-action: auto;
+      }
+      .bft-body {
+        gap: 7px;
+        padding: 8px;
+        max-height: calc(min(72dvh, 540px) - 42px);
+      }
+      .bft-input {
+        min-height: 76px;
+      }
+      .bft-button,
+      .bft-select {
+        min-height: 34px;
+      }
+      .bft-tool-row .bft-button,
+      .bft-control-row .bft-button {
+        flex: 1 1 calc(33.333% - 6px);
+        padding: 5px 6px;
+        font-size: 12px;
+      }
+      .bft-control-row .bft-button {
+        flex-basis: calc(50% - 6px);
+      }
+      .bft-status {
+        padding: 7px;
+      }
+      .bft-row {
+        gap: 6px;
+      }
+      .bft-collapsed {
+        left: auto;
+        right: 8px;
+        width: auto;
+        min-width: 104px;
+        border-radius: 8px;
+      }
+    }
+  `;
+    document.head.append(style);
+  }
+  function createButton(label, onClick, className = "") {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `bft-button ${className}`.trim();
+    button.textContent = label;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+  function getStatusText() {
+    const exercise = getCurrentExercise();
+    if (runtime.mode === "complete") {
+      return "训练完成";
+    }
+    if (!exercise) {
+      return exercises.length > 0 ? "准备开始" : "请先录入动作";
+    }
+    if (runtime.mode === "rest") {
+      return `休息 ${runtime.restRemaining}s`;
+    }
+    if (runtime.mode === "paused") {
+      return "已暂停";
+    }
+    if (runtime.mode === "exercise") {
+      return `动作中：第 ${runtime.setIndex + 1}/${exercise.sets} 组`;
+    }
+    return "准备开始";
+  }
+  function render(options = {}) {
+    let panel = document.getElementById(panelId);
+    if (!panel) {
+      panel = document.createElement("section");
+      panel.id = panelId;
+      document.body.append(panel);
+    }
+    panel.className = collapsed ? "bft-collapsed" : "";
+    applyPanelPosition(panel);
+    const parseResult = parsePlan(rawInput);
+    exercises = parseResult.exercises;
+    if (selectedStartIndex >= exercises.length) {
+      selectedStartIndex = Math.max(0, exercises.length - 1);
+    }
+    if (runtime.exerciseIndex >= exercises.length) {
+      runtime.exerciseIndex = 0;
+      runtime.setIndex = 0;
+      if (runtime.mode !== "complete") {
+        runtime.mode = "idle";
+      }
+    }
+    panel.replaceChildren();
+    const header = document.createElement("div");
+    header.className = "bft-header";
+    const title = document.createElement("div");
+    title.className = "bft-title";
+    title.textContent = "健身计时器";
+    const collapseButton = createButton(collapsed ? "展开" : "收起", () => {
+      collapsed = !collapsed;
+      render();
+    });
+    header.append(title, collapseButton);
+    setupPanelDrag(header, panel);
+    const body = document.createElement("div");
+    body.className = "bft-body";
+    const status = document.createElement("div");
+    status.className = "bft-status";
+    const current = getCurrentExercise();
+    const statusTitle = document.createElement("strong");
+    statusTitle.textContent = getStatusText();
+    const statusDetail = document.createElement("span");
+    statusDetail.className = "bft-muted";
+    statusDetail.textContent = current ? `${current.name} · ${formatTimestamp(current.start)}-${formatTimestamp(current.end)} · ${current.minReps}${current.maxReps === current.minReps ? "" : `-${current.maxReps}`} 次` : `${exercises.length} 个动作`;
+    status.append(statusTitle, statusDetail);
+    const textarea = document.createElement("textarea");
+    textarea.className = "bft-input";
+    textarea.placeholder = "俯卧撑 00:12-00:28 3x8-12 rest45";
+    textarea.value = rawInput;
+    textarea.addEventListener("input", () => {
+      const selectionStart = textarea.selectionStart;
+      const selectionEnd = textarea.selectionEnd;
+      rawInput = textarea.value;
+      runtime.mode = runtime.mode === "complete" ? "idle" : runtime.mode;
+      savePlan();
+      render({
+        restoreTextarea: {
+          selectionStart,
+          selectionEnd
+        }
+      });
+    });
+    const timeButtons = document.createElement("div");
+    timeButtons.className = "bft-row bft-tool-row";
+    timeButtons.append(
+      createButton("插入开始", () => insertCurrentTime("start")),
+      createButton("插入结束", () => insertCurrentTime("end")),
+      createButton("示例", () => {
+        rawInput = "俯卧撑 00:12-00:28 3x8-12 rest45\n深蹲 01:05-01:22 4x10 rest60";
+        savePlan();
+        render();
+      }),
+      createButton("导出", exportPlan),
+      createButton("导入", openImportPicker)
+    );
+    const settingsRow = document.createElement("div");
+    settingsRow.className = "bft-row";
+    const beepLabel = document.createElement("label");
+    beepLabel.className = "bft-row";
+    const beepText = document.createElement("span");
+    beepText.textContent = "提示音";
+    const beepSelect = document.createElement("select");
+    beepSelect.className = "bft-select";
+    [1, 2, 3, 5].forEach((value) => {
+      const option = document.createElement("option");
+      option.value = String(value);
+      option.textContent = `${value}s`;
+      option.selected = settings.beepDuration === value;
+      beepSelect.append(option);
+    });
+    beepSelect.addEventListener("change", () => {
+      settings.beepDuration = Number(beepSelect.value);
+      savePlan();
+    });
+    beepLabel.append(beepText, beepSelect);
+    const pauseLabel = document.createElement("label");
+    pauseLabel.className = "bft-check";
+    const pauseInput = document.createElement("input");
+    pauseInput.type = "checkbox";
+    pauseInput.checked = settings.pauseDuringRest;
+    pauseInput.addEventListener("change", () => {
+      settings.pauseDuringRest = pauseInput.checked;
+      savePlan();
+    });
+    pauseLabel.append(pauseInput, document.createTextNode("休息暂停视频"));
+    settingsRow.append(beepLabel, pauseLabel);
+    const startPickerRow = document.createElement("div");
+    startPickerRow.className = "bft-row";
+    const startPickerLabel = document.createElement("label");
+    startPickerLabel.className = "bft-row bft-grow";
+    const startPickerText = document.createElement("span");
+    startPickerText.textContent = "从动作";
+    const startPicker = document.createElement("select");
+    startPicker.className = "bft-select bft-grow";
+    startPicker.disabled = exercises.length === 0 || runtime.mode !== "idle";
+    exercises.forEach((exercise, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = `${index + 1}. ${exercise.name}`;
+      option.selected = index === selectedStartIndex;
+      startPicker.append(option);
+    });
+    startPicker.addEventListener("change", () => {
+      selectedStartIndex = Number(startPicker.value);
+      if (runtime.mode === "idle") {
+        runtime.exerciseIndex = selectedStartIndex;
+        runtime.setIndex = 0;
+      }
+      render();
+    });
+    startPickerLabel.append(startPickerText, startPicker);
+    startPickerRow.append(startPickerLabel);
+    const controls = document.createElement("div");
+    controls.className = "bft-row bft-control-row";
+    const startButton = createButton("开始训练", startTraining, "bft-primary");
+    startButton.disabled = exercises.length === 0;
+    const completeButton = createButton("完成本组", completeSet, "bft-primary");
+    completeButton.disabled = runtime.mode !== "exercise";
+    const skipButton = createButton("跳过休息", () => skipRest(false));
+    skipButton.disabled = runtime.mode !== "rest";
+    const pauseButton = createButton(runtime.mode === "paused" ? "继续" : "暂停", togglePause);
+    pauseButton.disabled = runtime.mode === "idle" || runtime.mode === "complete";
+    const resetButton = createButton("重置", () => {
+      clearRestTimer();
+      runtime = {
+        mode: "idle",
+        exerciseIndex: selectedStartIndex,
+        setIndex: 0,
+        restRemaining: 0,
+        beforePauseMode: "idle"
+      };
+      video == null ? void 0 : video.pause();
+      render();
+    }, "bft-danger");
+    controls.append(startButton, completeButton, skipButton, pauseButton, resetButton);
+    const list = document.createElement("ul");
+    list.className = "bft-list";
+    exercises.forEach((exercise, index) => {
+      const itemWrapper = document.createElement("li");
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = [
+        "bft-item",
+        index === runtime.exerciseIndex && runtime.mode !== "idle" ? "bft-item-active" : "",
+        index === selectedStartIndex ? "bft-item-selected" : ""
+      ].filter(Boolean).join(" ");
+      item.disabled = runtime.mode !== "idle" && runtime.mode !== "complete";
+      item.addEventListener("click", () => {
+        selectedStartIndex = index;
+        runtime.exerciseIndex = index;
+        runtime.setIndex = 0;
+        if (video) {
+          video.currentTime = exercise.start;
+        }
+        if (runtime.mode === "complete") {
+          runtime.mode = "idle";
+        }
+        render();
+      });
+      const name = document.createElement("strong");
+      name.textContent = exercise.name;
+      const meta = document.createElement("span");
+      meta.className = "bft-muted";
+      meta.textContent = `${formatTimestamp(exercise.start)}-${formatTimestamp(exercise.end)} · ${exercise.sets} 组 · ${exercise.minReps}${exercise.maxReps === exercise.minReps ? "" : `-${exercise.maxReps}`} 次 · 休息 ${exercise.restSeconds}s`;
+      item.append(name, meta);
+      itemWrapper.append(item);
+      list.append(itemWrapper);
+    });
+    body.append(status, textarea, timeButtons, settingsRow, startPickerRow, controls);
+    if (parseResult.errors.length > 0) {
+      const errorBox = document.createElement("div");
+      errorBox.className = "bft-error";
+      parseResult.errors.forEach((error) => {
+        const line = document.createElement("span");
+        line.textContent = error;
+        errorBox.append(line);
+      });
+      body.append(errorBox);
+    }
+    body.append(list);
+    panel.append(header, body);
+    applyPanelPosition(panel);
+    if (options.restoreTextarea) {
+      textarea.focus();
+      textarea.setSelectionRange(
+        options.restoreTextarea.selectionStart,
+        options.restoreTextarea.selectionEnd
+      );
+    }
+  }
+  function insertCurrentTime(kind) {
+    const timestamp = formatTimestamp((video == null ? void 0 : video.currentTime) ?? 0);
+    const line = kind === "start" ? `动作 ${timestamp}-` : `${timestamp} 3x8-12 rest45`;
+    rawInput = rawInput ? `${rawInput.trimEnd()}${kind === "start" ? "\n" : ""}${line}` : line;
+    savePlan();
+    render();
+  }
+  function setupNavigationWatcher() {
+    window.setInterval(() => {
+      const key = getStorageKey();
+      if (key === activeStorageKey) {
+        return;
+      }
+      activeStorageKey = key;
+      const plan = loadPlan();
+      rawInput = plan.rawInput;
+      settings = plan.settings;
+      clearRestTimer();
+      runtime = {
+        mode: "idle",
+        exerciseIndex: 0,
+        setIndex: 0,
+        restRemaining: 0,
+        beforePauseMode: "idle"
+      };
+      render();
+    }, 1e3);
+  }
+  function setupViewportWatcher() {
+    window.addEventListener("resize", () => {
+      const panel = document.getElementById(panelId);
+      if (!panel) {
+        return;
+      }
+      applyPanelPosition(panel);
+      if (!isMobileViewport()) {
+        savePreferences();
+      }
+    });
+  }
+  async function init() {
+    if (document.getElementById(panelId)) {
+      return;
+    }
+    activeStorageKey = getStorageKey();
+    const plan = loadPlan();
+    const preferences = loadPreferences();
+    rawInput = plan.rawInput;
+    settings = plan.settings;
+    panelPosition = preferences.panelPosition;
+    video = await waitForVideo();
+    injectStyle();
+    setLoopGuard();
+    render();
+    setupNavigationWatcher();
+    setupViewportWatcher();
+  }
+  void init();
+})();

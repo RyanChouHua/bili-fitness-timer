@@ -2,6 +2,15 @@
   "name": "bili-fitness-timer",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "homepage": "https://github.com/RyanChouHua/bili-fitness-timer#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RyanChouHua/bili-fitness-timer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RyanChouHua/bili-fitness-timer/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite build --watch --mode development",

@@ -2,6 +2,16 @@
 
 一个独立 Tampermonkey userscript，用 B 站视频片段辅助健身训练。
 
+## 安装
+
+安装地址：
+
+```text
+https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-fitness-timer.user.js
+```
+
+在浏览器安装 Tampermonkey 后打开上面的地址即可安装。后续脚本更新会通过 userscript 的 `@updateURL` 从 GitHub raw 获取。
+
 ## 功能
 
 - 在 B 站视频页注入轻量训练面板。
@@ -37,3 +47,15 @@ dist/bili-fitness-timer.user.js
 ```
 
 把该文件拖入已安装 Tampermonkey 的浏览器，或在 Tampermonkey 中新建脚本后粘贴构建产物。
+
+## 发布
+
+```bash
+npm run typecheck
+npm run build
+git add .
+git commit -m "Release userscript"
+git push
+```
+
+`dist/bili-fitness-timer.user.js` 会提交到仓库，用作 GitHub raw 安装和自动更新入口。

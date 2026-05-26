@@ -1,5 +1,7 @@
 node_modules/
-dist/
+dist/*
+!dist/
+!dist/bili-fitness-timer.user.js
 .vite/
 *.log
 *.local
