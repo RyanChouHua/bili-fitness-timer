@@ -29,6 +29,15 @@ interface StoredPlan {
   settings: Settings
 }
 
+interface PanelPosition {
+  left: number
+  top: number
+}
+
+interface Preferences {
+  panelPosition: PanelPosition | null
+}
+
 interface ParseResult {
   exercises: Exercise[]
   errors: string[]
@@ -36,6 +45,7 @@ interface ParseResult {
 
 const panelId = 'bili-fitness-timer-panel'
 const styleId = 'bili-fitness-timer-style'
+const preferencesStorageKey = 'bili-fitness-timer:preferences'
 const defaultSettings: Settings = {
   beepDuration: 2,
   pauseDuringRest: true,
@@ -49,6 +59,7 @@ let rawInput = ''
 let settings: Settings = { ...defaultSettings }
 let collapsed = false
 let selectedStartIndex = 0
+let panelPosition: PanelPosition | null = null
 let runtime: Runtime = {
   mode: 'idle',
   exerciseIndex: 0,
@@ -110,6 +121,189 @@ function savePlan(): void {
       settings,
     } satisfies StoredPlan),
   )
+}
+
+function loadPreferences(): Preferences {
+  try {
+    const saved = localStorage.getItem(preferencesStorageKey)
+    if (!saved) {
+      return { panelPosition: null }
+    }
+
+    const parsed = JSON.parse(saved) as Partial<Preferences>
+    const position = parsed.panelPosition
+    if (
+      position &&
+      typeof position.left === 'number' &&
+      typeof position.top === 'number'
+    ) {
+      return {
+        panelPosition: {
+          left: position.left,
+          top: position.top,
+        },
+      }
+    }
+  } catch {
+    return { panelPosition: null }
+  }
+
+  return { panelPosition: null }
+}
+
+function savePreferences(): void {
+  localStorage.setItem(
+    preferencesStorageKey,
+    JSON.stringify({
+      panelPosition,
+    } satisfies Preferences),
+  )
+}
+
+function isMobileViewport(): boolean {
+  return window.matchMedia('(max-width: 720px)').matches
+}
+
+function clampPanelPosition(position: PanelPosition, panel: HTMLElement): PanelPosition {
+  const margin = 10
+  const rect = panel.getBoundingClientRect()
+  const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin)
+  const maxTop = Math.max(margin, window.innerHeight - rect.height - margin)
+  return {
+    left: Math.min(Math.max(position.left, margin), maxLeft),
+    top: Math.min(Math.max(position.top, margin), maxTop),
+  }
+}
+
+function applyPanelPosition(panel: HTMLElement): void {
+  if (isMobileViewport()) {
+    panel.style.left = ''
+    panel.style.right = ''
+    panel.style.top = ''
+    panel.style.bottom = ''
+    return
+  }
+
+  if (!panelPosition) {
+    panel.style.left = ''
+    panel.style.right = ''
+    panel.style.top = ''
+    panel.style.bottom = ''
+    return
+  }
+
+  const nextPosition = clampPanelPosition(panelPosition, panel)
+  panelPosition = nextPosition
+  panel.style.left = `${nextPosition.left}px`
+  panel.style.top = `${nextPosition.top}px`
+  panel.style.right = 'auto'
+  panel.style.bottom = 'auto'
+}
+
+function setupPanelDrag(header: HTMLElement, panel: HTMLElement): void {
+  header.addEventListener('pointerdown', event => {
+    if (isMobileViewport() || event.button !== 0) {
+      return
+    }
+    if ((event.target as HTMLElement).closest('button')) {
+      return
+    }
+
+    const startRect = panel.getBoundingClientRect()
+    const startX = event.clientX
+    const startY = event.clientY
+    header.setPointerCapture(event.pointerId)
+    header.classList.add('bft-header-dragging')
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const next = clampPanelPosition(
+        {
+          left: startRect.left + moveEvent.clientX - startX,
+          top: startRect.top + moveEvent.clientY - startY,
+        },
+        panel,
+      )
+      panelPosition = next
+      panel.style.left = `${next.left}px`
+      panel.style.top = `${next.top}px`
+      panel.style.right = 'auto'
+      panel.style.bottom = 'auto'
+    }
+
+    const handleUp = (upEvent: PointerEvent) => {
+      header.releasePointerCapture(upEvent.pointerId)
+      header.classList.remove('bft-header-dragging')
+      header.removeEventListener('pointermove', handleMove)
+      header.removeEventListener('pointerup', handleUp)
+      header.removeEventListener('pointercancel', handleUp)
+      savePreferences()
+    }
+
+    header.addEventListener('pointermove', handleMove)
+    header.addEventListener('pointerup', handleUp)
+    header.addEventListener('pointercancel', handleUp)
+  })
+}
+
+function exportPlan(): void {
+  const payload: StoredPlan = {
+    rawInput,
+    settings,
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: 'application/json;charset=utf-8',
+  })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `bili-fitness-timer-${new Date().toISOString().slice(0, 10)}.json`
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+async function importPlanFromFile(file: File): Promise<void> {
+  const text = await file.text()
+  const parsed = JSON.parse(text) as Partial<StoredPlan>
+  if (typeof parsed.rawInput !== 'string') {
+    throw new Error('Invalid plan file')
+  }
+
+  rawInput = parsed.rawInput
+  settings = {
+    beepDuration:
+      typeof parsed.settings?.beepDuration === 'number'
+        ? parsed.settings.beepDuration
+        : settings.beepDuration,
+    pauseDuringRest:
+      typeof parsed.settings?.pauseDuringRest === 'boolean'
+        ? parsed.settings.pauseDuringRest
+        : settings.pauseDuringRest,
+  }
+  selectedStartIndex = 0
+  runtime = {
+    mode: 'idle',
+    exerciseIndex: 0,
+    setIndex: 0,
+    restRemaining: 0,
+    beforePauseMode: 'idle',
+  }
+  savePlan()
+  render()
+}
+
+function openImportPicker(): void {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'application/json,.json'
+  input.addEventListener('change', () => {
+    const file = input.files?.[0]
+    if (!file) {
+      return
+    }
+    void importPlanFromFile(file).catch(() => {
+      window.alert('导入失败：请选择由健身计时器导出的 JSON 文件')
+    })
+  })
+  input.click()
 }
 
 function parseTimestamp(value: string): number | null {
@@ -454,6 +648,12 @@ function injectStyle(): void {
       padding: 10px 12px;
       background: rgba(255, 255, 255, 0.06);
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+    .bft-header-dragging {
+      cursor: grabbing;
     }
     .bft-title {
       font-weight: 700;
@@ -589,12 +789,32 @@ function injectStyle(): void {
     }
     @media (max-width: 720px) {
       #${panelId} {
-        left: 10px;
-        right: 10px;
+        left: 8px;
+        right: 8px;
         top: auto;
-        bottom: 12px;
+        bottom: max(8px, env(safe-area-inset-bottom));
         width: auto;
-        max-height: 58vh;
+        max-height: min(68vh, 520px);
+        border-radius: 8px 8px 0 0;
+      }
+      .bft-header {
+        cursor: default;
+        touch-action: auto;
+      }
+      .bft-body {
+        gap: 8px;
+        padding: 10px;
+        max-height: calc(min(68vh, 520px) - 48px);
+      }
+      .bft-input {
+        min-height: 88px;
+      }
+      .bft-button,
+      .bft-select {
+        min-height: 36px;
+      }
+      .bft-row {
+        gap: 6px;
       }
     }
   `
@@ -638,6 +858,7 @@ function render(options: RenderOptions = {}): void {
     document.body.append(panel)
   }
   panel.className = collapsed ? 'bft-collapsed' : ''
+  applyPanelPosition(panel)
 
   const parseResult = parsePlan(rawInput)
   exercises = parseResult.exercises
@@ -664,6 +885,7 @@ function render(options: RenderOptions = {}): void {
     render()
   })
   header.append(title, collapseButton)
+  setupPanelDrag(header, panel)
 
   const body = document.createElement('div')
   body.className = 'bft-body'
@@ -709,6 +931,8 @@ function render(options: RenderOptions = {}): void {
       savePlan()
       render()
     }),
+    createButton('导出', exportPlan),
+    createButton('导入', openImportPicker),
   )
 
   const settingsRow = document.createElement('div')
@@ -846,6 +1070,7 @@ function render(options: RenderOptions = {}): void {
 
   body.append(list)
   panel.append(header, body)
+  applyPanelPosition(panel)
 
   if (options.restoreTextarea) {
     textarea.focus()
@@ -887,6 +1112,19 @@ function setupNavigationWatcher(): void {
   }, 1000)
 }
 
+function setupViewportWatcher(): void {
+  window.addEventListener('resize', () => {
+    const panel = document.getElementById(panelId)
+    if (!panel) {
+      return
+    }
+    applyPanelPosition(panel)
+    if (!isMobileViewport()) {
+      savePreferences()
+    }
+  })
+}
+
 async function init(): Promise<void> {
   if (document.getElementById(panelId)) {
     return
@@ -894,13 +1132,16 @@ async function init(): Promise<void> {
 
   activeStorageKey = getStorageKey()
   const plan = loadPlan()
+  const preferences = loadPreferences()
   rawInput = plan.rawInput
   settings = plan.settings
+  panelPosition = preferences.panelPosition
   video = await waitForVideo()
   injectStyle()
   setLoopGuard()
   render()
   setupNavigationWatcher()
+  setupViewportWatcher()
 }
 
 void init()
