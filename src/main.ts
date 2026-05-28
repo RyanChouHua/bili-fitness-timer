@@ -14,7 +14,7 @@ import {
 } from './core'
 
 type Mode = 'idle' | 'exercise' | 'rest' | 'paused' | 'complete'
-type WorkTab = 'groups' | 'input' | 'preview' | 'settings'
+type WorkTab = 'groups' | 'preview' | 'settings'
 
 interface Settings {
   beepDuration: number
@@ -68,6 +68,7 @@ const defaultSettings: Settings = {
   beepDuration: 2,
   pauseDuringRest: true,
 }
+const groupPageSize = 4
 
 let video: HTMLVideoElement | null = null
 let exercises: Exercise[] = []
@@ -76,6 +77,7 @@ let settings: Settings = { ...defaultSettings }
 let collapsed = false
 let previewLocked = true
 let activeWorkTab: WorkTab = 'groups'
+let groupPage = 0
 let selectedStartIndex = 0
 let panelPosition: PanelPosition | null = null
 let saveStatusText = '已自动保存'
@@ -138,7 +140,7 @@ function optionalText(value: unknown): string | undefined {
 }
 
 function normalizeWorkTab(value: unknown): WorkTab {
-  return value === 'groups' || value === 'input' || value === 'preview' || value === 'settings'
+  return value === 'groups' || value === 'preview' || value === 'settings'
     ? value
     : 'groups'
 }
@@ -254,6 +256,7 @@ function getActiveGroup(library = planGroups): StoredPlan | null {
 function applyPlanGroup(group: StoredPlan, groups = planGroups): void {
   planGroups = groups
   activeGroupId = group.id
+  groupPage = Math.floor(Math.max(0, groups.findIndex(item => item.id === group.id)) / groupPageSize)
   rawInput = group.rawInput
   settings = group.settings
   exercises = group.savedExercises
@@ -269,6 +272,7 @@ function loadPlan(): StoredPlan {
   const library = loadPlanLibrary()
   planGroups = library.groups
   activeGroupId = library.activeGroupId
+  groupPage = Math.floor(Math.max(0, planGroups.findIndex(group => group.id === activeGroupId)) / groupPageSize)
   return getActiveGroup(library.groups) ?? createEmptyGroup()
 }
 
@@ -631,7 +635,7 @@ function switchToGroup(groupId: string): void {
     return
   }
   applyPlanGroup(latestGroup, planGroups)
-  persistPlanLibrary('已切换训练分组')
+  persistPlanLibrary('已选择训练分组')
   render()
 }
 
@@ -640,7 +644,7 @@ function createNewGroup(): void {
   const group = createEmptyGroup(`训练分组 ${planGroups.length + 1}`)
   planGroups = [...planGroups, group]
   applyPlanGroup(group, planGroups)
-  persistPlanLibrary('已新建训练分组')
+  persistPlanLibrary('已创建并切换到空白分组')
   render()
 }
 
@@ -651,16 +655,17 @@ function duplicateCurrentGroup(): void {
     return
   }
   const now = Date.now()
+  const nextTitle = `${current.title ?? '训练分组'} 副本`
   const group: StoredPlan = {
     ...current,
     id: createGroupId(),
-    title: `${current.title ?? '训练分组'} 副本`,
+    title: nextTitle,
     createdAt: now,
     updatedAt: now,
   }
   planGroups = [...planGroups, group]
   applyPlanGroup(group, planGroups)
-  persistPlanLibrary('已复制当前分组')
+  persistPlanLibrary(`已复制并切换到：${nextTitle}`)
   render()
 }
 
@@ -678,14 +683,16 @@ function deleteCurrentGroup(): void {
     return
   }
 
+  const currentIndex = planGroups.findIndex(group => group.id === current.id)
   const nextGroups = planGroups.filter(group => group.id !== current.id)
-  const nextGroup = nextGroups[0]
+  const nextIndex = Math.min(Math.max(currentIndex, 0), nextGroups.length - 1)
+  const nextGroup = nextGroups[nextIndex]
   if (!nextGroup) {
     return
   }
   planGroups = nextGroups
   applyPlanGroup(nextGroup, planGroups)
-  persistPlanLibrary('已删除训练分组')
+  persistPlanLibrary('已删除当前分组并切换到相邻分组')
   render()
 }
 
@@ -721,6 +728,8 @@ function startTraining(): void {
   if (exercises.length === 0) {
     return
   }
+  activeWorkTab = 'preview'
+  savePreferences()
   selectedStartIndex = Math.min(selectedStartIndex, exercises.length - 1)
   runtime = {
     mode: 'exercise',
@@ -1001,11 +1010,16 @@ function injectStyle(): void {
       gap: 7px;
       z-index: 1;
       padding-bottom: 2px;
+      min-height: 0;
+      overflow: auto;
     }
     .bft-main-grid {
       display: grid;
+      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
       gap: 8px;
+      height: 100%;
       min-height: 0;
+      overflow: hidden;
     }
     .bft-main-left,
     .bft-main-right {
@@ -1014,6 +1028,11 @@ function injectStyle(): void {
       align-content: start;
       min-width: 0;
       min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+    .bft-main-left {
+      grid-template-rows: minmax(0, 1fr);
     }
     .bft-main-right {
       grid-template-rows: auto minmax(0, 1fr);
@@ -1028,7 +1047,7 @@ function injectStyle(): void {
     }
     .bft-tabs {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 4px;
     }
     .bft-tab {
@@ -1054,6 +1073,11 @@ function injectStyle(): void {
     .bft-tool-group {
       display: grid;
       gap: 4px;
+    }
+    .bft-left-input {
+      display: grid;
+      gap: 7px;
+      padding-top: 2px;
     }
     .bft-tool-label {
       font-size: 11px;
@@ -1102,7 +1126,7 @@ function injectStyle(): void {
     }
     .bft-input {
       width: 100%;
-      min-height: 86px;
+      min-height: 104px;
       resize: vertical;
       color: #f6f7f9;
       background: rgba(0, 0, 0, 0.24);
@@ -1184,12 +1208,16 @@ function injectStyle(): void {
     }
     .bft-manager-list {
       display: grid;
-      gap: 6px;
+      gap: 4px;
+      max-height: 188px;
+      overflow-y: auto;
+      padding-right: 2px;
+      scrollbar-width: thin;
     }
     .bft-manager-item {
       display: grid;
-      gap: 5px;
-      padding: 7px;
+      gap: 3px;
+      padding: 4px 6px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.05);
@@ -1202,6 +1230,17 @@ function injectStyle(): void {
     .bft-manager-item .bft-muted {
       min-width: 0;
       overflow-wrap: anywhere;
+    }
+    .bft-pager {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding-top: 2px;
+    }
+    .bft-pager .bft-row {
+      gap: 4px;
     }
     .bft-item {
       display: grid;
@@ -1259,7 +1298,7 @@ function injectStyle(): void {
         height: calc(100% - 42px);
       }
       .bft-input {
-        min-height: 76px;
+        min-height: 96px;
       }
       .bft-field-grid {
         grid-template-columns: 1fr;
@@ -1280,6 +1319,9 @@ function injectStyle(): void {
       }
       .bft-tool-group .bft-button {
         flex: 1 1 calc(50% - 6px);
+      }
+      .bft-manager-list {
+        max-height: 144px;
       }
       .bft-status {
         padding: 7px;
@@ -1316,6 +1358,7 @@ function injectStyle(): void {
     @media (min-width: 820px) {
       .bft-main-grid {
         grid-template-columns: minmax(250px, 0.9fr) minmax(260px, 1.1fr);
+        grid-template-rows: minmax(0, 1fr);
         align-items: start;
       }
     }
@@ -1337,7 +1380,6 @@ function createTabBar(): HTMLElement {
   tabs.className = 'bft-tabs'
   const items: Array<{ id: WorkTab; label: string }> = [
     { id: 'groups', label: '分组' },
-    { id: 'input', label: '录入' },
     { id: 'preview', label: '预览' },
     { id: 'settings', label: '设置' },
   ]
@@ -1458,7 +1500,13 @@ function createManagerList(): HTMLElement {
     return wrapper
   }
 
-  groups.forEach((group, index) => {
+  const totalPages = Math.max(1, Math.ceil(groups.length / groupPageSize))
+  groupPage = Math.min(Math.max(groupPage, 0), totalPages - 1)
+  const pageStart = groupPage * groupPageSize
+  const visibleGroups = groups.slice(pageStart, pageStart + groupPageSize)
+
+  visibleGroups.forEach((group, pageIndex) => {
+    const index = pageStart + pageIndex
     const item = document.createElement('div')
     item.className = `bft-manager-item ${group.id === activeGroupId ? 'bft-manager-active' : ''}`.trim()
     const title = document.createElement('strong')
@@ -1471,7 +1519,7 @@ function createManagerList(): HTMLElement {
     meta.textContent = `${getGroupActionCount(group)} 个动作 · ${updatedText}`
     const extraTexts = [
       group.author ? `作者：${compactText(group.author, 32)}` : '',
-      group.notes ? `备注：${compactText(group.notes)}` : '',
+      group.notes ? `备注：${compactText(group.notes, 48)}` : '',
     ].filter(Boolean)
     const extra = document.createElement('span')
     extra.className = 'bft-muted'
@@ -1479,7 +1527,7 @@ function createManagerList(): HTMLElement {
 
     const actions = document.createElement('div')
     actions.className = 'bft-row'
-    const loadButton = createButton('选择', () => switchToGroup(group.id), 'bft-primary')
+    const loadButton = createButton('切换到此分组', () => switchToGroup(group.id), 'bft-primary')
     loadButton.disabled = group.id === activeGroupId
     actions.append(loadButton)
     item.append(title, meta)
@@ -1491,6 +1539,33 @@ function createManagerList(): HTMLElement {
   })
 
   return wrapper
+}
+
+function createGroupPager(): HTMLElement {
+  const totalPages = Math.max(1, Math.ceil(planGroups.length / groupPageSize))
+  groupPage = Math.min(Math.max(groupPage, 0), totalPages - 1)
+  const pager = document.createElement('div')
+  pager.className = 'bft-pager'
+  const meta = document.createElement('span')
+  meta.className = 'bft-muted'
+  const pageStart = planGroups.length === 0 ? 0 : groupPage * groupPageSize + 1
+  const pageEnd = Math.min(planGroups.length, (groupPage + 1) * groupPageSize)
+  meta.textContent = `${pageStart}-${pageEnd} / ${planGroups.length}`
+  const actions = document.createElement('div')
+  actions.className = 'bft-row'
+  const prevButton = createButton('上一页', () => {
+    groupPage = Math.max(0, groupPage - 1)
+    render()
+  })
+  prevButton.disabled = groupPage === 0
+  const nextButton = createButton('下一页', () => {
+    groupPage = Math.min(totalPages - 1, groupPage + 1)
+    render()
+  })
+  nextButton.disabled = groupPage >= totalPages - 1
+  actions.append(prevButton, nextButton)
+  pager.append(meta, actions)
+  return pager
 }
 
 function createGroupActions(): HTMLElement {
@@ -1522,9 +1597,9 @@ function createGroupActions(): HTMLElement {
   const actions = document.createElement('div')
   actions.className = 'bft-row'
   actions.append(
-    createButton('新建分组', createNewGroup, 'bft-primary'),
-    createButton('复制当前', duplicateCurrentGroup),
-    createButton('删除当前', deleteCurrentGroup, 'bft-danger'),
+    createButton('新建空白分组', createNewGroup, 'bft-primary'),
+    createButton('复制为新分组', duplicateCurrentGroup),
+    createButton('删除当前分组', deleteCurrentGroup, 'bft-danger'),
   )
   wrapper.append(label, pickerRow, actions)
   return wrapper
@@ -1570,21 +1645,12 @@ function createSettingsPanel(): HTMLElement {
   return panel
 }
 
-function createWorkPanel(
-  parseResult: ReturnType<typeof parsePlan>,
-  inputChildren: Node[],
-  list: HTMLElement,
-): HTMLElement {
+function createWorkPanel(parseResult: ReturnType<typeof parsePlan>, list: HTMLElement): HTMLElement {
   const panel = document.createElement('div')
   panel.className = 'bft-work-panel'
 
   if (activeWorkTab === 'groups') {
-    panel.append(createGroupActions(), createPlanInfoForm(), createManagerList())
-    return panel
-  }
-
-  if (activeWorkTab === 'input') {
-    panel.append(...inputChildren)
+    panel.append(createGroupActions(), createPlanInfoForm(), createManagerList(), createGroupPager())
     return panel
   }
 
@@ -1606,7 +1672,7 @@ function createWorkPanel(
   if (parseResult.errors.length > 0) {
     const warning = document.createElement('div')
     warning.className = 'bft-error'
-    warning.textContent = '录入内容有错误，请在“录入”页处理。'
+    warning.textContent = '录入内容有错误，请在左侧“时间戳录入”处理。'
     panel.append(warning)
   }
   return panel
@@ -1680,7 +1746,6 @@ function render(options: RenderOptions = {}): void {
     const selectionStart = textarea.selectionStart
     const selectionEnd = textarea.selectionEnd
     rawInput = textarea.value
-    activeWorkTab = 'input'
     runtime.mode = runtime.mode === 'complete' ? 'idle' : runtime.mode
     savePlan()
     render({
@@ -1809,8 +1874,6 @@ function render(options: RenderOptions = {}): void {
     list.append(empty)
   }
 
-  controlStack.append(status, startPickerRow, controls, completeRow)
-
   const inputChildren: Node[] = [textarea, insertGroup, templateGroup, fileGroup]
 
   if (parseResult.errors.length > 0) {
@@ -1824,6 +1887,14 @@ function render(options: RenderOptions = {}): void {
     inputChildren.push(errorBox)
   }
 
+  const inputPanel = document.createElement('div')
+  inputPanel.className = 'bft-left-input'
+  const inputTitle = document.createElement('strong')
+  inputTitle.textContent = '时间戳录入'
+  inputPanel.append(inputTitle, ...inputChildren)
+
+  controlStack.append(status, startPickerRow, controls, completeRow, inputPanel)
+
   const mainGrid = document.createElement('div')
   mainGrid.className = 'bft-main-grid'
   const mainLeft = document.createElement('div')
@@ -1832,13 +1903,13 @@ function render(options: RenderOptions = {}): void {
   mainRight.className = 'bft-main-right'
 
   mainLeft.append(controlStack)
-  mainRight.append(createTabBar(), createWorkPanel(parseResult, inputChildren, list))
+  mainRight.append(createTabBar(), createWorkPanel(parseResult, list))
   mainGrid.append(mainLeft, mainRight)
   body.append(mainGrid)
   panel.append(header, body)
   applyPanelPosition(panel)
 
-  if (options.restoreTextarea && activeWorkTab === 'input') {
+  if (options.restoreTextarea) {
     textarea.focus()
     textarea.setSelectionRange(
       options.restoreTextarea.selectionStart,
