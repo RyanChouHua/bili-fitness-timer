@@ -107,6 +107,7 @@ let activePlanTitle = ''
 let activePlanAuthor = ''
 let activePlanNotes = ''
 let planGroups: StoredPlan[] = []
+let pendingPlanInfoFocus = false
 let initInProgress = false
 let navigationReloadInProgress = false
 const guardedVideos = new WeakSet<HTMLVideoElement>()
@@ -788,24 +789,36 @@ function openImportPicker(): void {
   input.click()
 }
 
-function switchToGroup(groupId: string): void {
+function activateGroup(groupId: string, statusText: string): boolean {
   const group = planGroups.find(item => item.id === groupId)
   if (!group) {
     saveStatusText = '未找到当前视频下的子分组'
-    render()
-    return
+    return false
   }
 
   if (group.id === activeGroupId) {
-    return
+    saveStatusText = statusText
+    return true
   }
   savePlan('已保存当前子分组')
   const latestGroup = planGroups.find(item => item.id === groupId)
   if (!latestGroup) {
-    return
+    return false
   }
   applyPlanGroup(latestGroup, planGroups)
-  persistPlanLibrary('已切换当前视频子分组')
+  persistPlanLibrary(statusText)
+  return true
+}
+
+function switchToGroup(groupId: string): void {
+  activateGroup(groupId, '已切换当前视频子分组')
+  render()
+}
+
+function editGroup(groupId: string): void {
+  if (activateGroup(groupId, '可在下方修改标题、作者和备注')) {
+    pendingPlanInfoFocus = true
+  }
   render()
 }
 
@@ -839,30 +852,40 @@ function duplicateCurrentGroup(): void {
   render()
 }
 
-function deleteCurrentGroup(): void {
-  const current = getActiveGroup()
-  if (!current) {
+function deleteGroup(groupId: string): void {
+  const target = planGroups.find(group => group.id === groupId)
+  if (!target) {
+    saveStatusText = '未找到要删除的子分组'
+    render()
     return
   }
   if (planGroups.length <= 1) {
     window.alert('当前视频至少保留一个子分组')
     return
   }
-  const label = current.title ?? '当前子分组'
+  const label = target.title ?? '当前子分组'
   if (!window.confirm(`删除当前视频子分组：${label}？`)) {
     return
   }
 
-  const currentIndex = planGroups.findIndex(group => group.id === current.id)
-  const nextGroups = planGroups.filter(group => group.id !== current.id)
-  const nextIndex = Math.min(Math.max(currentIndex, 0), nextGroups.length - 1)
-  const nextGroup = nextGroups[nextIndex]
-  if (!nextGroup) {
+  const wasActive = target.id === activeGroupId
+  const currentPage = groupPage
+  savePlan('已保存当前子分组')
+  const targetIndex = planGroups.findIndex(group => group.id === target.id)
+  const nextGroups = planGroups.filter(group => group.id !== target.id)
+  if (nextGroups.length === 0) {
     return
   }
+
   planGroups = nextGroups
-  applyPlanGroup(nextGroup, planGroups)
-  persistPlanLibrary('已删除当前子分组并切换到相邻子分组')
+  if (wasActive) {
+    const nextIndex = Math.min(Math.max(targetIndex, 0), nextGroups.length - 1)
+    applyPlanGroup(nextGroups[nextIndex], planGroups)
+  } else {
+    const totalPages = Math.max(1, Math.ceil(planGroups.length / groupPageSize))
+    groupPage = Math.min(Math.max(currentPage, 0), totalPages - 1)
+  }
+  persistPlanLibrary(wasActive ? '已删除当前子分组并切换到相邻子分组' : '已删除子分组')
   render()
 }
 
@@ -1382,7 +1405,7 @@ function injectStyle(): void {
     .bft-manager-list {
       display: grid;
       gap: 3px;
-      max-height: 172px;
+      max-height: 168px;
       overflow-y: auto;
       padding-right: 2px;
       scrollbar-width: thin;
@@ -1419,12 +1442,20 @@ function injectStyle(): void {
       font-size: 11px;
       line-height: 1.3;
     }
-    .bft-manager-item .bft-row {
+    .bft-manager-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 4px;
+      flex-wrap: nowrap;
+    }
+    .bft-manager-item .bft-row,
+    .bft-manager-actions {
       flex-wrap: nowrap;
     }
     .bft-manager-item .bft-button {
       min-height: 24px;
-      padding: 2px 6px;
+      padding: 2px 5px;
     }
     .bft-pager {
       display: flex;
@@ -1545,6 +1576,15 @@ function injectStyle(): void {
       .bft-manager-list {
         max-height: 132px;
       }
+      .bft-manager-item {
+        grid-template-columns: 1fr;
+      }
+      .bft-manager-actions {
+        justify-content: stretch;
+      }
+      .bft-manager-actions .bft-button {
+        flex: 1 1 0;
+      }
       .bft-status {
         padding: 7px;
       }
@@ -1658,6 +1698,7 @@ function createTextField(
   value: string,
   onInput: (value: string) => void,
   multiline = false,
+  shouldFocus = false,
 ): HTMLElement {
   const label = document.createElement('label')
   label.className = 'bft-field'
@@ -1674,6 +1715,14 @@ function createTextField(
     onInput(field.value)
     savePlan()
   })
+  if (shouldFocus) {
+    window.setTimeout(() => {
+      field.focus()
+      if (field instanceof HTMLInputElement) {
+        field.select()
+      }
+    }, 0)
+  }
   label.append(caption, field)
   return label
 }
@@ -1686,11 +1735,12 @@ function createPlanInfoForm(): HTMLElement {
   grid.append(
     createTextField('标题', activePlanTitle, value => {
       activePlanTitle = value.trim()
-    }),
+    }, false, pendingPlanInfoFocus),
     createTextField('作者', activePlanAuthor, value => {
       activePlanAuthor = value.trim()
     }),
   )
+  pendingPlanInfoFocus = false
   wrapper.append(
     grid,
     createTextField('备注', activePlanNotes, value => {
@@ -1753,10 +1803,14 @@ function createManagerList(): HTMLElement {
     extra.textContent = extraTexts.join(' · ')
 
     const actions = document.createElement('div')
-    actions.className = 'bft-row'
+    actions.className = 'bft-manager-actions'
     const loadButton = createButton('切换', () => switchToGroup(group.id), 'bft-primary')
     loadButton.disabled = group.id === activeGroupId
-    actions.append(loadButton)
+    actions.append(
+      loadButton,
+      createButton('修改', () => editGroup(group.id)),
+      createButton('删除', () => deleteGroup(group.id), 'bft-danger'),
+    )
     content.append(title, meta)
     if (extraTexts.length > 0) {
       content.append(extra)
@@ -1801,34 +1855,20 @@ function createGroupActions(): HTMLElement {
   const label = document.createElement('span')
   label.className = 'bft-tool-label'
   label.textContent = `视频分组 ${getCurrentStorageId()} · ${planGroups.length} 个子分组`
-  const pickerRow = document.createElement('div')
-  pickerRow.className = 'bft-row'
-  const pickerLabel = document.createElement('label')
-  pickerLabel.className = 'bft-row bft-grow'
-  const pickerText = document.createElement('span')
-  pickerText.textContent = '当前子分组'
-  const picker = document.createElement('select')
-  picker.className = 'bft-select bft-grow'
-  planGroups.forEach((group, index) => {
-    const option = document.createElement('option')
-    option.value = group.id
-    option.textContent = group.title || `子分组 ${index + 1}`
-    option.selected = group.id === activeGroupId
-    picker.append(option)
-  })
-  picker.addEventListener('change', () => {
-    switchToGroup(picker.value)
-  })
-  pickerLabel.append(pickerText, picker)
-  pickerRow.append(pickerLabel)
+  wrapper.append(label)
+  return wrapper
+}
+
+function createGroupCreateActions(): HTMLElement {
+  const wrapper = document.createElement('div')
+  wrapper.className = 'bft-tool-group'
   const actions = document.createElement('div')
   actions.className = 'bft-row'
   actions.append(
     createButton('新建空白子分组', createNewGroup, 'bft-primary'),
-    createButton('复制为子分组', duplicateCurrentGroup),
-    createButton('删除当前子分组', deleteCurrentGroup, 'bft-danger'),
+    createButton('复制当前计划', duplicateCurrentGroup),
   )
-  wrapper.append(label, pickerRow, actions)
+  wrapper.append(actions)
   return wrapper
 }
 
@@ -1877,7 +1917,13 @@ function createWorkPanel(parseResult: ReturnType<typeof parsePlan>, list: HTMLEl
   panel.className = 'bft-work-panel'
 
   if (activeWorkTab === 'groups') {
-    panel.append(createGroupActions(), createPlanInfoForm(), createManagerList(), createGroupPager())
+    panel.append(
+      createGroupActions(),
+      createManagerList(),
+      createGroupPager(),
+      createGroupCreateActions(),
+      createPlanInfoForm(),
+    )
     return panel
   }
 
@@ -1998,8 +2044,6 @@ function render(options: RenderOptions = {}): void {
   const insertGroup = createToolGroup('时间', [
     createButton('插入开始', () => insertCurrentTime('start')),
     createButton('插入结束', () => insertCurrentTime('end')),
-  ])
-  const templateGroup = createToolGroup('模板', [
     createButton('示例', () => {
       rawInput =
         '俯卧撑 00:12-00:28 3x8-12 rest45\n深蹲 01:05-01:22 4x10 rest60'
@@ -2105,7 +2149,7 @@ function render(options: RenderOptions = {}): void {
     list.append(empty)
   }
 
-  const inputChildren: Node[] = [textarea, insertGroup, templateGroup, fileGroup]
+  const inputChildren: Node[] = [textarea, insertGroup, fileGroup]
 
   if (parseResult.errors.length > 0) {
     const errorBox = document.createElement('div')
