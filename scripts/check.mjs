@@ -2,10 +2,14 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 import {
+  booleanPreference,
   extractBvidFromUrl,
+  getPlanStorageKey,
   getTimestampLibraryUrl,
+  isPlanStorageKey,
   normalizeImportedPlanData,
   parsePlan,
+  summarizeStoredPlan,
 } from '../src/core.ts'
 
 const readText = path => readFile(new URL(path, import.meta.url), 'utf8')
@@ -30,6 +34,12 @@ assert.equal(
   getTimestampLibraryUrl(bvid),
   `https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/timestamps/${bvid}.json`,
 )
+assert.equal(getPlanStorageKey(bvid), `bili-fitness-timer:${bvid}`)
+assert.equal(isPlanStorageKey(`bili-fitness-timer:${bvid}`), true)
+assert.equal(isPlanStorageKey('bili-fitness-timer:preferences'), false)
+assert.equal(isPlanStorageKey('other:key'), false)
+assert.equal(booleanPreference(true, false), true)
+assert.equal(booleanPreference(undefined, true), true)
 
 const parsed = parsePlan('Push Up 00:12-00:28 3x8-12 rest45')
 assert.deepEqual(parsed.errors, [])
@@ -40,7 +50,24 @@ assert.equal(parsed.exercises[0]?.sets, 3)
 const timestampFile = JSON.parse(await readText('../timestamps/BV1xx411c7mD.json'))
 const imported = normalizeImportedPlanData(timestampFile)
 assert.equal(imported.bvid, bvid)
+assert.equal(imported.title, 'Example workout timestamps')
 assert.equal(imported.exercises.length > 0 || imported.rawInput.length > 0, true)
 assert.deepEqual(parsePlan(imported.rawInput).errors, [])
+
+const summary = summarizeStoredPlan(
+  `bili-fitness-timer:${bvid}`,
+  JSON.stringify({
+    bvid,
+    title: 'Saved sample',
+    rawInput: 'Push Up 00:12-00:28 3x8-12 rest45',
+    savedExercises: parsed.exercises,
+    updatedAt: 12345,
+  }),
+)
+assert.equal(summary?.storageId, bvid)
+assert.equal(summary?.title, 'Saved sample')
+assert.equal(summary?.actionCount, 1)
+assert.equal(summary?.updatedAt, 12345)
+assert.equal(summarizeStoredPlan(`bili-fitness-timer:${bvid}`, '{bad json'), null)
 
 console.log('check passed')

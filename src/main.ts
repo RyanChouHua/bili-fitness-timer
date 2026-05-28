@@ -1,12 +1,19 @@
 import {
   type Exercise,
+  type SavedPlanSummary,
+  booleanPreference,
+  defaultPreferencesStorageKey,
   extractBvidFromUrl,
   formatTimestamp,
+  getPlanStorageKey,
   getTimestampLibraryUrl,
+  isPlanStorageKey,
+  normalizeBvid,
   normalizeExerciseList,
   normalizeImportedPlanData,
   parsePlan,
   serializeExercises,
+  summarizeStoredPlan,
 } from './core'
 
 type Mode = 'idle' | 'exercise' | 'rest' | 'paused' | 'complete'
@@ -28,6 +35,9 @@ interface StoredPlan {
   rawInput: string
   settings: Settings
   savedExercises: Exercise[]
+  bvid?: string | null
+  title?: string
+  updatedAt?: number
 }
 
 interface PanelPosition {
@@ -39,11 +49,13 @@ interface Preferences {
   panelPosition: PanelPosition | null
   inputCollapsed: boolean
   previewCollapsed: boolean
+  managerCollapsed: boolean
+  previewLocked: boolean
 }
 
 const panelId = 'bili-fitness-timer-panel'
 const styleId = 'bili-fitness-timer-style'
-const preferencesStorageKey = 'bili-fitness-timer:preferences'
+const preferencesStorageKey = defaultPreferencesStorageKey
 const defaultSettings: Settings = {
   beepDuration: 2,
   pauseDuringRest: true,
@@ -56,6 +68,8 @@ let settings: Settings = { ...defaultSettings }
 let collapsed = false
 let inputCollapsed = false
 let previewCollapsed = false
+let managerCollapsed = true
+let previewLocked = true
 let selectedStartIndex = 0
 let panelPosition: PanelPosition | null = null
 let saveStatusText = '已自动保存'
@@ -72,6 +86,7 @@ let restTimerId: number | undefined
 let navigationWatcherId: number | undefined
 let viewportWatcherReady = false
 let activeStorageKey = ''
+let activePlanTitle = ''
 let initInProgress = false
 let navigationReloadInProgress = false
 const guardedVideos = new WeakSet<HTMLVideoElement>()
@@ -87,9 +102,12 @@ function getCurrentBvid(): string | null {
   return extractBvidFromUrl(location.href)
 }
 
+function getCurrentStorageId(): string {
+  return getCurrentBvid() ?? location.pathname
+}
+
 function getStorageKey(): string {
-  const bvid = getCurrentBvid()
-  return `bili-fitness-timer:${bvid ?? location.pathname}`
+  return getPlanStorageKey(getCurrentStorageId())
 }
 
 function loadPlan(): StoredPlan {
@@ -122,6 +140,9 @@ function loadPlan(): StoredPlan {
             : defaultSettings.pauseDuringRest,
       },
       savedExercises,
+      bvid: typeof parsed.bvid === 'string' ? normalizeBvid(parsed.bvid) : getCurrentBvid(),
+      title: typeof parsed.title === 'string' ? parsed.title : undefined,
+      updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : undefined,
     }
   } catch {
     return fallback
@@ -137,6 +158,9 @@ function savePlan(statusText = '已自动保存'): void {
       rawInput,
       settings,
       savedExercises,
+      bvid: getCurrentBvid(),
+      title: activePlanTitle || document.title || getCurrentStorageId(),
+      updatedAt: Date.now(),
     } satisfies StoredPlan),
   )
   saveStatusText =
@@ -147,15 +171,23 @@ function loadPreferences(): Preferences {
   try {
     const saved = localStorage.getItem(preferencesStorageKey)
     if (!saved) {
-      return { panelPosition: null, inputCollapsed: false, previewCollapsed: false }
+      return {
+        panelPosition: null,
+        inputCollapsed: false,
+        previewCollapsed: false,
+        managerCollapsed: true,
+        previewLocked: true,
+      }
     }
 
     const parsed = JSON.parse(saved) as Partial<Preferences>
     const position = parsed.panelPosition
     const nextPreferences: Preferences = {
       panelPosition: null,
-      inputCollapsed: parsed.inputCollapsed === true,
-      previewCollapsed: parsed.previewCollapsed === true,
+      inputCollapsed: booleanPreference(parsed.inputCollapsed, false),
+      previewCollapsed: booleanPreference(parsed.previewCollapsed, false),
+      managerCollapsed: booleanPreference(parsed.managerCollapsed, true),
+      previewLocked: booleanPreference(parsed.previewLocked, true),
     }
     if (
       position &&
@@ -170,10 +202,22 @@ function loadPreferences(): Preferences {
 
     return nextPreferences
   } catch {
-    return { panelPosition: null, inputCollapsed: false, previewCollapsed: false }
+    return {
+      panelPosition: null,
+      inputCollapsed: false,
+      previewCollapsed: false,
+      managerCollapsed: true,
+      previewLocked: true,
+    }
   }
 
-  return { panelPosition: null, inputCollapsed: false, previewCollapsed: false }
+  return {
+    panelPosition: null,
+    inputCollapsed: false,
+    previewCollapsed: false,
+    managerCollapsed: true,
+    previewLocked: true,
+  }
 }
 
 function savePreferences(): void {
@@ -183,6 +227,8 @@ function savePreferences(): void {
       panelPosition,
       inputCollapsed,
       previewCollapsed,
+      managerCollapsed,
+      previewLocked,
     } satisfies Preferences),
   )
 }
@@ -277,10 +323,12 @@ function exportPlan(): void {
   const savedExercises = parseResult.errors.length === 0 ? parseResult.exercises : exercises
   const payload = {
     bvid: getCurrentBvid(),
+    title: activePlanTitle || document.title || undefined,
     rawInput,
     settings,
     savedExercises,
     exercises: savedExercises,
+    updatedAt: Date.now(),
   }
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: 'application/json;charset=utf-8',
@@ -298,6 +346,10 @@ async function importPlanFromFile(file: File): Promise<void> {
   const imported = normalizeImportedPlanData(parsed)
 
   rawInput = imported.rawInput
+  activePlanTitle =
+    typeof parsed.title === 'string' && parsed.title.trim()
+      ? parsed.title.trim()
+      : file.name.replace(/\.json$/i, '')
   settings = {
     beepDuration:
       typeof parsed.settings?.beepDuration === 'number'
@@ -356,6 +408,7 @@ async function importPlanFromOnline(): Promise<void> {
     }
 
     rawInput = imported.rawInput
+    activePlanTitle = imported.title ?? document.title
     exercises = parseResult.exercises
     selectedStartIndex = 0
     clearRestTimer()
@@ -389,6 +442,90 @@ function openImportPicker(): void {
     })
   })
   input.click()
+}
+
+function getSavedPlanSummaries(): SavedPlanSummary[] {
+  const summaries: SavedPlanSummary[] = []
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (!key || !isPlanStorageKey(key, preferencesStorageKey)) {
+      continue
+    }
+    const value = localStorage.getItem(key)
+    if (value === null) {
+      continue
+    }
+    const summary = summarizeStoredPlan(key, value)
+    if (summary) {
+      summaries.push(summary)
+    }
+  }
+
+  return summaries.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+}
+
+function loadPlanByStorageKey(storageKey: string): void {
+  const saved = localStorage.getItem(storageKey)
+  if (!saved) {
+    saveStatusText = '未找到本地保存数据'
+    render()
+    return
+  }
+
+  try {
+    const parsed = JSON.parse(saved) as Partial<StoredPlan>
+    const savedExercises = normalizeExerciseList(parsed.savedExercises)
+    rawInput =
+      typeof parsed.rawInput === 'string'
+        ? parsed.rawInput
+        : serializeExercises(savedExercises)
+    settings = {
+      beepDuration:
+        typeof parsed.settings?.beepDuration === 'number'
+          ? parsed.settings.beepDuration
+          : defaultSettings.beepDuration,
+      pauseDuringRest:
+        typeof parsed.settings?.pauseDuringRest === 'boolean'
+          ? parsed.settings.pauseDuringRest
+          : defaultSettings.pauseDuringRest,
+    }
+    activePlanTitle =
+      typeof parsed.title === 'string' && parsed.title.trim()
+        ? parsed.title.trim()
+        : storageKey.replace(/^bili-fitness-timer:/, '')
+    const parseResult = parsePlan(rawInput)
+    exercises = parseResult.errors.length === 0 ? parseResult.exercises : savedExercises
+    selectedStartIndex = 0
+    clearRestTimer()
+    resetRuntime()
+    saveStatusText = '已加载本地保存数据'
+    render()
+  } catch {
+    saveStatusText = '本地保存数据格式错误'
+    render()
+  }
+}
+
+function deletePlanByStorageKey(storageKey: string): void {
+  const summary = getSavedPlanSummaries().find(item => item.storageKey === storageKey)
+  const label = summary?.title ?? storageKey
+  if (!window.confirm(`删除本地保存数据：${label}？`)) {
+    return
+  }
+
+  localStorage.removeItem(storageKey)
+  if (storageKey === activeStorageKey) {
+    rawInput = ''
+    exercises = []
+    activePlanTitle = ''
+    selectedStartIndex = 0
+    clearRestTimer()
+    resetRuntime()
+    saveStatusText = '已删除当前视频本地数据'
+  } else {
+    saveStatusText = '已删除本地保存数据'
+  }
+  render()
 }
 
 function getCurrentExercise(): Exercise | null {
@@ -525,6 +662,40 @@ function togglePause(): void {
   render()
 }
 
+function switchToExercise(index: number): void {
+  const exercise = exercises[index]
+  if (!exercise) {
+    return
+  }
+
+  selectedStartIndex = index
+  clearRestTimer()
+  runtime.exerciseIndex = index
+  runtime.setIndex = 0
+  runtime.restRemaining = 0
+
+  if (video) {
+    video.currentTime = exercise.start
+  }
+
+  if (runtime.mode === 'paused') {
+    runtime.beforePauseMode = 'exercise'
+    render()
+    return
+  }
+
+  if (runtime.mode === 'exercise' || runtime.mode === 'rest') {
+    runtime.mode = 'exercise'
+    playCurrentExercise()
+    return
+  }
+
+  if (runtime.mode === 'complete') {
+    runtime.mode = 'idle'
+  }
+  render()
+}
+
 async function beep(durationSeconds: number): Promise<void> {
   type AudioContextConstructor = typeof AudioContext
   const AudioContextConstructor =
@@ -611,7 +782,7 @@ function injectStyle(): void {
       right: 14px;
       top: 88px;
       z-index: 2147483647;
-      width: min(340px, calc(100vw - 28px));
+      width: min(620px, calc(100vw - 28px));
       max-height: calc(100vh - 104px);
       color: #f6f7f9;
       background: rgba(22, 24, 29, 0.94);
@@ -672,6 +843,17 @@ function injectStyle(): void {
       padding-bottom: 2px;
       background: linear-gradient(180deg, rgba(22, 24, 29, 0.98), rgba(22, 24, 29, 0.9));
     }
+    .bft-main-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .bft-main-left,
+    .bft-main-right {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      min-width: 0;
+    }
     .bft-status {
       display: grid;
       gap: 3px;
@@ -694,6 +876,13 @@ function injectStyle(): void {
       padding: 6px 7px;
       background: rgba(255, 255, 255, 0.055);
     }
+    .bft-section-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
     .bft-section-body {
       display: grid;
       gap: 7px;
@@ -706,6 +895,18 @@ function injectStyle(): void {
     .bft-tool-label {
       font-size: 11px;
       color: rgba(246, 247, 249, 0.58);
+    }
+    .bft-control-row .bft-button {
+      flex: 1 1 calc(50% - 6px);
+    }
+    .bft-complete-row {
+      display: grid;
+    }
+    .bft-complete-button {
+      width: 100%;
+      min-height: 48px;
+      font-size: 15px;
+      letter-spacing: 0;
     }
     .bft-muted {
       color: rgba(246, 247, 249, 0.68);
@@ -789,6 +990,20 @@ function injectStyle(): void {
       padding: 0;
       list-style: none;
     }
+    .bft-manager-list {
+      display: grid;
+      gap: 6px;
+      max-height: 220px;
+      overflow: auto;
+    }
+    .bft-manager-item {
+      display: grid;
+      gap: 5px;
+      padding: 7px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+    }
     .bft-item {
       display: grid;
       gap: 2px;
@@ -853,12 +1068,13 @@ function injectStyle(): void {
       }
       .bft-tool-row .bft-button,
       .bft-control-row .bft-button {
-        flex: 1 1 calc(33.333% - 6px);
+        flex: 1 1 calc(50% - 6px);
         padding: 5px 6px;
         font-size: 12px;
       }
-      .bft-control-row .bft-button {
-        flex-basis: calc(50% - 6px);
+      .bft-complete-button {
+        min-height: 54px;
+        font-size: 15px;
       }
       .bft-tool-group .bft-button {
         flex: 1 1 calc(50% - 6px);
@@ -881,7 +1097,7 @@ function injectStyle(): void {
       #${panelId} {
         right: 12px;
         top: 72px;
-        width: min(360px, calc(100vw - 24px));
+        width: min(680px, calc(100vw - 24px));
         max-height: calc(100vh - 90px);
       }
       .bft-body {
@@ -893,6 +1109,12 @@ function injectStyle(): void {
       }
       .bft-tool-group .bft-button {
         flex: 1 1 calc(50% - 6px);
+      }
+    }
+    @media (min-width: 820px) {
+      .bft-main-grid {
+        grid-template-columns: minmax(250px, 0.9fr) minmax(260px, 1.1fr);
+        align-items: start;
       }
     }
   `
@@ -933,6 +1155,7 @@ function createSection(
   isCollapsed: boolean,
   onToggle: () => void,
   children: Node[],
+  actions: Node[] = [],
 ): HTMLElement {
   const section = document.createElement('section')
   section.className = `bft-section ${isCollapsed ? 'bft-section-collapsed' : ''}`.trim()
@@ -941,7 +1164,10 @@ function createSection(
   header.className = 'bft-section-head'
   const title = document.createElement('strong')
   title.textContent = titleText
-  header.append(title, createButton(isCollapsed ? '展开' : '折叠', onToggle))
+  const actionRow = document.createElement('div')
+  actionRow.className = 'bft-section-actions'
+  actionRow.append(...actions, createButton(isCollapsed ? '展开' : '折叠', onToggle))
+  header.append(title, actionRow)
   section.append(header)
 
   if (!isCollapsed) {
@@ -965,6 +1191,43 @@ function createToolGroup(labelText: string, buttons: HTMLButtonElement[]): HTMLE
   buttonRow.append(...buttons)
   group.append(label, buttonRow)
   return group
+}
+
+function createManagerList(): HTMLElement {
+  const wrapper = document.createElement('div')
+  wrapper.className = 'bft-manager-list'
+  const summaries = getSavedPlanSummaries()
+
+  if (summaries.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'bft-empty'
+    empty.textContent = '暂无本地保存数据'
+    wrapper.append(empty)
+    return wrapper
+  }
+
+  summaries.forEach(summary => {
+    const item = document.createElement('div')
+    item.className = 'bft-manager-item'
+    const title = document.createElement('strong')
+    title.textContent = summary.title
+    const meta = document.createElement('span')
+    meta.className = 'bft-muted'
+    const updatedText = summary.updatedAt
+      ? new Date(summary.updatedAt).toLocaleString()
+      : '未知时间'
+    meta.textContent = `${summary.bvid ?? summary.storageId} · ${summary.actionCount} 个动作 · ${updatedText}`
+
+    const actions = document.createElement('div')
+    actions.className = 'bft-row'
+    const loadButton = createButton('切换', () => loadPlanByStorageKey(summary.storageKey), 'bft-primary')
+    const deleteButton = createButton('删除', () => deletePlanByStorageKey(summary.storageKey), 'bft-danger')
+    actions.append(loadButton, deleteButton)
+    item.append(title, meta, actions)
+    wrapper.append(item)
+  })
+
+  return wrapper
 }
 
 function render(options: RenderOptions = {}): void {
@@ -1137,6 +1400,7 @@ function render(options: RenderOptions = {}): void {
   const startButton = createButton('开始训练', startTraining, 'bft-primary')
   startButton.disabled = exercises.length === 0
   const completeButton = createButton('完成本组', completeSet, 'bft-primary')
+  completeButton.classList.add('bft-complete-button')
   completeButton.disabled = runtime.mode !== 'exercise'
   const skipButton = createButton('跳过休息', () => skipRest(false))
   skipButton.disabled = runtime.mode !== 'rest'
@@ -1154,7 +1418,10 @@ function render(options: RenderOptions = {}): void {
     video?.pause()
     render()
   }, 'bft-danger')
-  controls.append(startButton, completeButton, skipButton, pauseButton, resetButton)
+  controls.append(startButton, skipButton, pauseButton, resetButton)
+  const completeRow = document.createElement('div')
+  completeRow.className = 'bft-complete-row'
+  completeRow.append(completeButton)
 
   const list = document.createElement('ul')
   list.className = 'bft-list'
@@ -1169,18 +1436,11 @@ function render(options: RenderOptions = {}): void {
     ]
       .filter(Boolean)
       .join(' ')
-    item.disabled = runtime.mode !== 'idle' && runtime.mode !== 'complete'
+    const canSwitchItem =
+      runtime.mode === 'idle' || runtime.mode === 'complete' || !previewLocked
+    item.disabled = !canSwitchItem
     item.addEventListener('click', () => {
-      selectedStartIndex = index
-      runtime.exerciseIndex = index
-      runtime.setIndex = 0
-      if (video) {
-        video.currentTime = exercise.start
-      }
-      if (runtime.mode === 'complete') {
-        runtime.mode = 'idle'
-      }
-      render()
+      switchToExercise(index)
     })
     const name = document.createElement('strong')
     name.textContent = exercise.name
@@ -1199,8 +1459,7 @@ function render(options: RenderOptions = {}): void {
     list.append(empty)
   }
 
-  controlStack.append(status, settingsRow, startPickerRow, controls)
-  body.append(controlStack)
+  controlStack.append(status, settingsRow, startPickerRow, controls, completeRow)
 
   const inputChildren: Node[] = [textarea, insertGroup, templateGroup, fileGroup]
 
@@ -1215,18 +1474,39 @@ function render(options: RenderOptions = {}): void {
     inputChildren.push(errorBox)
   }
 
-  body.append(
+  const mainGrid = document.createElement('div')
+  mainGrid.className = 'bft-main-grid'
+  const mainLeft = document.createElement('div')
+  mainLeft.className = 'bft-main-left'
+  const mainRight = document.createElement('div')
+  mainRight.className = 'bft-main-right'
+
+  mainLeft.append(controlStack)
+  mainRight.append(
     createSection('数据录入', inputCollapsed, () => {
       inputCollapsed = !inputCollapsed
       savePreferences()
       render()
     }, inputChildren),
+    createSection('数据管理', managerCollapsed, () => {
+      managerCollapsed = !managerCollapsed
+      savePreferences()
+      render()
+    }, [createManagerList()]),
     createSection(`动作预览 · ${exercises.length}`, previewCollapsed, () => {
       previewCollapsed = !previewCollapsed
       savePreferences()
       render()
-    }, [list]),
+    }, [list], [
+      createButton(previewLocked ? '解锁' : '锁定', () => {
+        previewLocked = !previewLocked
+        savePreferences()
+        render()
+      }),
+    ]),
   )
+  mainGrid.append(mainLeft, mainRight)
+  body.append(mainGrid)
   panel.append(header, body)
   applyPanelPosition(panel)
 
@@ -1302,6 +1582,7 @@ function setupNavigationWatcher(): void {
         rawInput = plan.rawInput
         settings = plan.settings
         exercises = plan.savedExercises
+        activePlanTitle = plan.title ?? document.title
         selectedStartIndex = 0
         clearRestTimer()
         resetRuntime()
@@ -1355,7 +1636,10 @@ async function init(): Promise<void> {
     exercises = plan.savedExercises
     inputCollapsed = preferences.inputCollapsed
     previewCollapsed = preferences.previewCollapsed
+    managerCollapsed = preferences.managerCollapsed
+    previewLocked = preferences.previewLocked
     panelPosition = preferences.panelPosition
+    activePlanTitle = plan.title ?? document.title
     selectedStartIndex = 0
     resetRuntime()
     video = nextVideo

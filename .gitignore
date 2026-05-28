@@ -21,6 +21,7 @@ CLAUDE.md
 # Local requirement drafts, not release assets
 修改要求*.md
 需求确认*.md
+agent工作流程*.md
 
 # Runtime/cache files
 .cache/

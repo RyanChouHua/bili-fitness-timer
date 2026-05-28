@@ -16,10 +16,22 @@ export interface ParseResult {
 
 export interface ImportedPlanData {
   bvid: string | null
+  title: string | null
   rawInput: string
   exercises: Exercise[]
 }
 
+export interface SavedPlanSummary {
+  storageKey: string
+  storageId: string
+  bvid: string | null
+  title: string
+  actionCount: number
+  updatedAt: number | null
+}
+
+export const planStoragePrefix = 'bili-fitness-timer:'
+export const defaultPreferencesStorageKey = `${planStoragePrefix}preferences`
 export const timestampLibraryBaseUrl =
   'https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/timestamps'
 
@@ -69,6 +81,21 @@ export function extractBvidFromUrl(url: string): string | null {
 
 export function getTimestampLibraryUrl(bvid: string): string {
   return `${timestampLibraryBaseUrl}/${encodeURIComponent(bvid)}.json`
+}
+
+export function getPlanStorageKey(id: string): string {
+  return `${planStoragePrefix}${id}`
+}
+
+export function isPlanStorageKey(
+  key: string,
+  preferencesStorageKey = defaultPreferencesStorageKey,
+): boolean {
+  return key.startsWith(planStoragePrefix) && key !== preferencesStorageKey
+}
+
+export function booleanPreference(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
 }
 
 export function parseTimestamp(value: string): number | null {
@@ -252,6 +279,7 @@ export function normalizeImportedPlanData(value: unknown): ImportedPlanData {
 
   const payload = value as {
     bvid?: unknown
+    title?: unknown
     rawInput?: unknown
     exercises?: unknown
     savedExercises?: unknown
@@ -270,7 +298,60 @@ export function normalizeImportedPlanData(value: unknown): ImportedPlanData {
 
   return {
     bvid: typeof payload.bvid === 'string' ? normalizeBvid(payload.bvid) : null,
+    title:
+      typeof payload.title === 'string' && payload.title.trim()
+        ? payload.title.trim()
+        : null,
     rawInput,
     exercises: importedExercises,
+  }
+}
+
+export function summarizeStoredPlan(storageKey: string, storedValue: string): SavedPlanSummary | null {
+  try {
+    const parsed = JSON.parse(storedValue) as {
+      bvid?: unknown
+      title?: unknown
+      rawInput?: unknown
+      savedExercises?: unknown
+      updatedAt?: unknown
+    }
+    const storageId = storageKey.startsWith(planStoragePrefix)
+      ? storageKey.slice(planStoragePrefix.length)
+      : storageKey
+    const savedExercises = normalizeExerciseList(parsed.savedExercises)
+    const rawInput =
+      typeof parsed.rawInput === 'string'
+        ? parsed.rawInput
+        : serializeExercises(savedExercises)
+    const parsedFromInput = savedExercises.length > 0 ? savedExercises : parsePlan(rawInput).exercises
+
+    if (!rawInput.trim() && parsedFromInput.length === 0) {
+      return null
+    }
+
+    const bvid =
+      typeof parsed.bvid === 'string'
+        ? normalizeBvid(parsed.bvid)
+        : normalizeBvid(storageId)
+    const title =
+      typeof parsed.title === 'string' && parsed.title.trim()
+        ? parsed.title.trim()
+        : bvid ?? storageId
+    const updatedAt =
+      typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
+        ? parsed.updatedAt
+        : null
+
+    return {
+      storageKey,
+      storageId,
+      bvid,
+      title,
+      actionCount: parsedFromInput.length,
+      updatedAt,
+    }
+  } catch {
+    return null
   }
 }

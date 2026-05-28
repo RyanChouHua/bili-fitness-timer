@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.2.0
+// @version      0.3.0
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
@@ -15,6 +15,8 @@
 
 (function() {
   "use strict";
+  const planStoragePrefix = "bili-fitness-timer:";
+  const defaultPreferencesStorageKey = `${planStoragePrefix}preferences`;
   const timestampLibraryBaseUrl = "https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/timestamps";
   const timestampPattern = String.raw`(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d+)?|(?:(?:\d+\s*时)?(?:\d+\s*分)?\d+(?:\.\d+)?\s*秒|(?:\d+\s*时)?\d+\s*分(?:\s*\d+(?:\.\d+)?\s*秒)?)`;
   const bvidPattern = /BV[0-9A-Za-z]{10}/i;
@@ -54,6 +56,15 @@
   }
   function getTimestampLibraryUrl(bvid) {
     return `${timestampLibraryBaseUrl}/${encodeURIComponent(bvid)}.json`;
+  }
+  function getPlanStorageKey(id) {
+    return `${planStoragePrefix}${id}`;
+  }
+  function isPlanStorageKey(key, preferencesStorageKey2 = defaultPreferencesStorageKey) {
+    return key.startsWith(planStoragePrefix) && key !== preferencesStorageKey2;
+  }
+  function booleanPreference(value, fallback) {
+    return typeof value === "boolean" ? value : fallback;
   }
   function parseTimestamp(value) {
     const text = value.trim();
@@ -190,13 +201,39 @@
     }
     return {
       bvid: typeof payload.bvid === "string" ? normalizeBvid(payload.bvid) : null,
+      title: typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : null,
       rawInput: rawInput2,
       exercises: importedExercises
     };
   }
+  function summarizeStoredPlan(storageKey, storedValue) {
+    try {
+      const parsed = JSON.parse(storedValue);
+      const storageId = storageKey.startsWith(planStoragePrefix) ? storageKey.slice(planStoragePrefix.length) : storageKey;
+      const savedExercises = normalizeExerciseList(parsed.savedExercises);
+      const rawInput2 = typeof parsed.rawInput === "string" ? parsed.rawInput : serializeExercises(savedExercises);
+      const parsedFromInput = savedExercises.length > 0 ? savedExercises : parsePlan(rawInput2).exercises;
+      if (!rawInput2.trim() && parsedFromInput.length === 0) {
+        return null;
+      }
+      const bvid = typeof parsed.bvid === "string" ? normalizeBvid(parsed.bvid) : normalizeBvid(storageId);
+      const title = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : bvid ?? storageId;
+      const updatedAt = typeof parsed.updatedAt === "number" && Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : null;
+      return {
+        storageKey,
+        storageId,
+        bvid,
+        title,
+        actionCount: parsedFromInput.length,
+        updatedAt
+      };
+    } catch {
+      return null;
+    }
+  }
   const panelId = "bili-fitness-timer-panel";
   const styleId = "bili-fitness-timer-style";
-  const preferencesStorageKey = "bili-fitness-timer:preferences";
+  const preferencesStorageKey = defaultPreferencesStorageKey;
   const defaultSettings = {
     beepDuration: 2,
     pauseDuringRest: true
@@ -208,6 +245,8 @@
   let collapsed = false;
   let inputCollapsed = false;
   let previewCollapsed = false;
+  let managerCollapsed = true;
+  let previewLocked = true;
   let selectedStartIndex = 0;
   let panelPosition = null;
   let saveStatusText = "已自动保存";
@@ -223,15 +262,18 @@
   let navigationWatcherId;
   let viewportWatcherReady = false;
   let activeStorageKey = "";
+  let activePlanTitle = "";
   let initInProgress = false;
   let navigationReloadInProgress = false;
   const guardedVideos = /* @__PURE__ */ new WeakSet();
   function getCurrentBvid() {
     return extractBvidFromUrl(location.href);
   }
+  function getCurrentStorageId() {
+    return getCurrentBvid() ?? location.pathname;
+  }
   function getStorageKey() {
-    const bvid = getCurrentBvid();
-    return `bili-fitness-timer:${bvid ?? location.pathname}`;
+    return getPlanStorageKey(getCurrentStorageId());
   }
   function loadPlan() {
     var _a, _b;
@@ -253,7 +295,10 @@
           beepDuration: typeof ((_a = parsed.settings) == null ? void 0 : _a.beepDuration) === "number" ? parsed.settings.beepDuration : defaultSettings.beepDuration,
           pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : defaultSettings.pauseDuringRest
         },
-        savedExercises
+        savedExercises,
+        bvid: typeof parsed.bvid === "string" ? normalizeBvid(parsed.bvid) : getCurrentBvid(),
+        title: typeof parsed.title === "string" ? parsed.title : void 0,
+        updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : void 0
       };
     } catch {
       return fallback;
@@ -267,7 +312,10 @@
       JSON.stringify({
         rawInput,
         settings,
-        savedExercises
+        savedExercises,
+        bvid: getCurrentBvid(),
+        title: activePlanTitle || document.title || getCurrentStorageId(),
+        updatedAt: Date.now()
       })
     );
     saveStatusText = parseResult.errors.length === 0 ? statusText : "输入有错误，已保留上次有效动作";
@@ -276,14 +324,22 @@
     try {
       const saved = localStorage.getItem(preferencesStorageKey);
       if (!saved) {
-        return { panelPosition: null, inputCollapsed: false, previewCollapsed: false };
+        return {
+          panelPosition: null,
+          inputCollapsed: false,
+          previewCollapsed: false,
+          managerCollapsed: true,
+          previewLocked: true
+        };
       }
       const parsed = JSON.parse(saved);
       const position = parsed.panelPosition;
       const nextPreferences = {
         panelPosition: null,
-        inputCollapsed: parsed.inputCollapsed === true,
-        previewCollapsed: parsed.previewCollapsed === true
+        inputCollapsed: booleanPreference(parsed.inputCollapsed, false),
+        previewCollapsed: booleanPreference(parsed.previewCollapsed, false),
+        managerCollapsed: booleanPreference(parsed.managerCollapsed, true),
+        previewLocked: booleanPreference(parsed.previewLocked, true)
       };
       if (position && typeof position.left === "number" && typeof position.top === "number") {
         nextPreferences.panelPosition = {
@@ -293,9 +349,21 @@
       }
       return nextPreferences;
     } catch {
-      return { panelPosition: null, inputCollapsed: false, previewCollapsed: false };
+      return {
+        panelPosition: null,
+        inputCollapsed: false,
+        previewCollapsed: false,
+        managerCollapsed: true,
+        previewLocked: true
+      };
     }
-    return { panelPosition: null, inputCollapsed: false, previewCollapsed: false };
+    return {
+      panelPosition: null,
+      inputCollapsed: false,
+      previewCollapsed: false,
+      managerCollapsed: true,
+      previewLocked: true
+    };
   }
   function savePreferences() {
     localStorage.setItem(
@@ -303,7 +371,9 @@
       JSON.stringify({
         panelPosition,
         inputCollapsed,
-        previewCollapsed
+        previewCollapsed,
+        managerCollapsed,
+        previewLocked
       })
     );
   }
@@ -387,10 +457,12 @@
     const savedExercises = parseResult.errors.length === 0 ? parseResult.exercises : exercises;
     const payload = {
       bvid: getCurrentBvid(),
+      title: activePlanTitle || document.title || void 0,
       rawInput,
       settings,
       savedExercises,
-      exercises: savedExercises
+      exercises: savedExercises,
+      updatedAt: Date.now()
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json;charset=utf-8"
@@ -407,6 +479,7 @@
     const parsed = JSON.parse(text);
     const imported = normalizeImportedPlanData(parsed);
     rawInput = imported.rawInput;
+    activePlanTitle = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : file.name.replace(/\.json$/i, "");
     settings = {
       beepDuration: typeof ((_a = parsed.settings) == null ? void 0 : _a.beepDuration) === "number" ? parsed.settings.beepDuration : settings.beepDuration,
       pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : settings.pauseDuringRest
@@ -453,6 +526,7 @@
         throw new Error(`在线时间戳格式错误：${parseResult.errors[0]}`);
       }
       rawInput = imported.rawInput;
+      activePlanTitle = imported.title ?? document.title;
       exercises = parseResult.exercises;
       selectedStartIndex = 0;
       clearRestTimer();
@@ -486,6 +560,73 @@
       });
     });
     input.click();
+  }
+  function getSavedPlanSummaries() {
+    const summaries = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key || !isPlanStorageKey(key, preferencesStorageKey)) {
+        continue;
+      }
+      const value = localStorage.getItem(key);
+      if (value === null) {
+        continue;
+      }
+      const summary = summarizeStoredPlan(key, value);
+      if (summary) {
+        summaries.push(summary);
+      }
+    }
+    return summaries.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  }
+  function loadPlanByStorageKey(storageKey) {
+    var _a, _b;
+    const saved = localStorage.getItem(storageKey);
+    if (!saved) {
+      saveStatusText = "未找到本地保存数据";
+      render();
+      return;
+    }
+    try {
+      const parsed = JSON.parse(saved);
+      const savedExercises = normalizeExerciseList(parsed.savedExercises);
+      rawInput = typeof parsed.rawInput === "string" ? parsed.rawInput : serializeExercises(savedExercises);
+      settings = {
+        beepDuration: typeof ((_a = parsed.settings) == null ? void 0 : _a.beepDuration) === "number" ? parsed.settings.beepDuration : defaultSettings.beepDuration,
+        pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : defaultSettings.pauseDuringRest
+      };
+      activePlanTitle = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : storageKey.replace(/^bili-fitness-timer:/, "");
+      const parseResult = parsePlan(rawInput);
+      exercises = parseResult.errors.length === 0 ? parseResult.exercises : savedExercises;
+      selectedStartIndex = 0;
+      clearRestTimer();
+      resetRuntime();
+      saveStatusText = "已加载本地保存数据";
+      render();
+    } catch {
+      saveStatusText = "本地保存数据格式错误";
+      render();
+    }
+  }
+  function deletePlanByStorageKey(storageKey) {
+    const summary = getSavedPlanSummaries().find((item) => item.storageKey === storageKey);
+    const label = (summary == null ? void 0 : summary.title) ?? storageKey;
+    if (!window.confirm(`删除本地保存数据：${label}？`)) {
+      return;
+    }
+    localStorage.removeItem(storageKey);
+    if (storageKey === activeStorageKey) {
+      rawInput = "";
+      exercises = [];
+      activePlanTitle = "";
+      selectedStartIndex = 0;
+      clearRestTimer();
+      resetRuntime();
+      saveStatusText = "已删除当前视频本地数据";
+    } else {
+      saveStatusText = "已删除本地保存数据";
+    }
+    render();
   }
   function getCurrentExercise() {
     return exercises[runtime.exerciseIndex] ?? null;
@@ -604,6 +745,34 @@
     video == null ? void 0 : video.pause();
     render();
   }
+  function switchToExercise(index) {
+    const exercise = exercises[index];
+    if (!exercise) {
+      return;
+    }
+    selectedStartIndex = index;
+    clearRestTimer();
+    runtime.exerciseIndex = index;
+    runtime.setIndex = 0;
+    runtime.restRemaining = 0;
+    if (video) {
+      video.currentTime = exercise.start;
+    }
+    if (runtime.mode === "paused") {
+      runtime.beforePauseMode = "exercise";
+      render();
+      return;
+    }
+    if (runtime.mode === "exercise" || runtime.mode === "rest") {
+      runtime.mode = "exercise";
+      playCurrentExercise();
+      return;
+    }
+    if (runtime.mode === "complete") {
+      runtime.mode = "idle";
+    }
+    render();
+  }
   async function beep(durationSeconds) {
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextConstructor) {
@@ -680,7 +849,7 @@
       right: 14px;
       top: 88px;
       z-index: 2147483647;
-      width: min(340px, calc(100vw - 28px));
+      width: min(620px, calc(100vw - 28px));
       max-height: calc(100vh - 104px);
       color: #f6f7f9;
       background: rgba(22, 24, 29, 0.94);
@@ -741,6 +910,17 @@
       padding-bottom: 2px;
       background: linear-gradient(180deg, rgba(22, 24, 29, 0.98), rgba(22, 24, 29, 0.9));
     }
+    .bft-main-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .bft-main-left,
+    .bft-main-right {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      min-width: 0;
+    }
     .bft-status {
       display: grid;
       gap: 3px;
@@ -763,6 +943,13 @@
       padding: 6px 7px;
       background: rgba(255, 255, 255, 0.055);
     }
+    .bft-section-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
     .bft-section-body {
       display: grid;
       gap: 7px;
@@ -775,6 +962,18 @@
     .bft-tool-label {
       font-size: 11px;
       color: rgba(246, 247, 249, 0.58);
+    }
+    .bft-control-row .bft-button {
+      flex: 1 1 calc(50% - 6px);
+    }
+    .bft-complete-row {
+      display: grid;
+    }
+    .bft-complete-button {
+      width: 100%;
+      min-height: 48px;
+      font-size: 15px;
+      letter-spacing: 0;
     }
     .bft-muted {
       color: rgba(246, 247, 249, 0.68);
@@ -858,6 +1057,20 @@
       padding: 0;
       list-style: none;
     }
+    .bft-manager-list {
+      display: grid;
+      gap: 6px;
+      max-height: 220px;
+      overflow: auto;
+    }
+    .bft-manager-item {
+      display: grid;
+      gap: 5px;
+      padding: 7px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+    }
     .bft-item {
       display: grid;
       gap: 2px;
@@ -922,12 +1135,13 @@
       }
       .bft-tool-row .bft-button,
       .bft-control-row .bft-button {
-        flex: 1 1 calc(33.333% - 6px);
+        flex: 1 1 calc(50% - 6px);
         padding: 5px 6px;
         font-size: 12px;
       }
-      .bft-control-row .bft-button {
-        flex-basis: calc(50% - 6px);
+      .bft-complete-button {
+        min-height: 54px;
+        font-size: 15px;
       }
       .bft-tool-group .bft-button {
         flex: 1 1 calc(50% - 6px);
@@ -950,7 +1164,7 @@
       #${panelId} {
         right: 12px;
         top: 72px;
-        width: min(360px, calc(100vw - 24px));
+        width: min(680px, calc(100vw - 24px));
         max-height: calc(100vh - 90px);
       }
       .bft-body {
@@ -962,6 +1176,12 @@
       }
       .bft-tool-group .bft-button {
         flex: 1 1 calc(50% - 6px);
+      }
+    }
+    @media (min-width: 820px) {
+      .bft-main-grid {
+        grid-template-columns: minmax(250px, 0.9fr) minmax(260px, 1.1fr);
+        align-items: start;
       }
     }
   `;
@@ -994,14 +1214,17 @@
     }
     return "准备开始";
   }
-  function createSection(titleText, isCollapsed, onToggle, children) {
+  function createSection(titleText, isCollapsed, onToggle, children, actions = []) {
     const section = document.createElement("section");
     section.className = `bft-section ${isCollapsed ? "bft-section-collapsed" : ""}`.trim();
     const header = document.createElement("div");
     header.className = "bft-section-head";
     const title = document.createElement("strong");
     title.textContent = titleText;
-    header.append(title, createButton(isCollapsed ? "展开" : "折叠", onToggle));
+    const actionRow = document.createElement("div");
+    actionRow.className = "bft-section-actions";
+    actionRow.append(...actions, createButton(isCollapsed ? "展开" : "折叠", onToggle));
+    header.append(title, actionRow);
     section.append(header);
     if (!isCollapsed) {
       const body = document.createElement("div");
@@ -1022,6 +1245,36 @@
     buttonRow.append(...buttons);
     group.append(label, buttonRow);
     return group;
+  }
+  function createManagerList() {
+    const wrapper = document.createElement("div");
+    wrapper.className = "bft-manager-list";
+    const summaries = getSavedPlanSummaries();
+    if (summaries.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "bft-empty";
+      empty.textContent = "暂无本地保存数据";
+      wrapper.append(empty);
+      return wrapper;
+    }
+    summaries.forEach((summary) => {
+      const item = document.createElement("div");
+      item.className = "bft-manager-item";
+      const title = document.createElement("strong");
+      title.textContent = summary.title;
+      const meta = document.createElement("span");
+      meta.className = "bft-muted";
+      const updatedText = summary.updatedAt ? new Date(summary.updatedAt).toLocaleString() : "未知时间";
+      meta.textContent = `${summary.bvid ?? summary.storageId} · ${summary.actionCount} 个动作 · ${updatedText}`;
+      const actions = document.createElement("div");
+      actions.className = "bft-row";
+      const loadButton = createButton("切换", () => loadPlanByStorageKey(summary.storageKey), "bft-primary");
+      const deleteButton = createButton("删除", () => deletePlanByStorageKey(summary.storageKey), "bft-danger");
+      actions.append(loadButton, deleteButton);
+      item.append(title, meta, actions);
+      wrapper.append(item);
+    });
+    return wrapper;
   }
   function render(options = {}) {
     let panel = document.getElementById(panelId);
@@ -1178,6 +1431,7 @@
     const startButton = createButton("开始训练", startTraining, "bft-primary");
     startButton.disabled = exercises.length === 0;
     const completeButton = createButton("完成本组", completeSet, "bft-primary");
+    completeButton.classList.add("bft-complete-button");
     completeButton.disabled = runtime.mode !== "exercise";
     const skipButton = createButton("跳过休息", () => skipRest(false));
     skipButton.disabled = runtime.mode !== "rest";
@@ -1195,7 +1449,10 @@
       video == null ? void 0 : video.pause();
       render();
     }, "bft-danger");
-    controls.append(startButton, completeButton, skipButton, pauseButton, resetButton);
+    controls.append(startButton, skipButton, pauseButton, resetButton);
+    const completeRow = document.createElement("div");
+    completeRow.className = "bft-complete-row";
+    completeRow.append(completeButton);
     const list = document.createElement("ul");
     list.className = "bft-list";
     exercises.forEach((exercise, index) => {
@@ -1207,18 +1464,10 @@
         index === runtime.exerciseIndex && runtime.mode !== "idle" ? "bft-item-active" : "",
         index === selectedStartIndex ? "bft-item-selected" : ""
       ].filter(Boolean).join(" ");
-      item.disabled = runtime.mode !== "idle" && runtime.mode !== "complete";
+      const canSwitchItem = runtime.mode === "idle" || runtime.mode === "complete" || !previewLocked;
+      item.disabled = !canSwitchItem;
       item.addEventListener("click", () => {
-        selectedStartIndex = index;
-        runtime.exerciseIndex = index;
-        runtime.setIndex = 0;
-        if (video) {
-          video.currentTime = exercise.start;
-        }
-        if (runtime.mode === "complete") {
-          runtime.mode = "idle";
-        }
-        render();
+        switchToExercise(index);
       });
       const name = document.createElement("strong");
       name.textContent = exercise.name;
@@ -1235,8 +1484,7 @@
       empty.textContent = "暂无有效动作";
       list.append(empty);
     }
-    controlStack.append(status, settingsRow, startPickerRow, controls);
-    body.append(controlStack);
+    controlStack.append(status, settingsRow, startPickerRow, controls, completeRow);
     const inputChildren = [textarea, insertGroup, templateGroup, fileGroup];
     if (parseResult.errors.length > 0) {
       const errorBox = document.createElement("div");
@@ -1248,18 +1496,38 @@
       });
       inputChildren.push(errorBox);
     }
-    body.append(
+    const mainGrid = document.createElement("div");
+    mainGrid.className = "bft-main-grid";
+    const mainLeft = document.createElement("div");
+    mainLeft.className = "bft-main-left";
+    const mainRight = document.createElement("div");
+    mainRight.className = "bft-main-right";
+    mainLeft.append(controlStack);
+    mainRight.append(
       createSection("数据录入", inputCollapsed, () => {
         inputCollapsed = !inputCollapsed;
         savePreferences();
         render();
       }, inputChildren),
+      createSection("数据管理", managerCollapsed, () => {
+        managerCollapsed = !managerCollapsed;
+        savePreferences();
+        render();
+      }, [createManagerList()]),
       createSection(`动作预览 · ${exercises.length}`, previewCollapsed, () => {
         previewCollapsed = !previewCollapsed;
         savePreferences();
         render();
-      }, [list])
+      }, [list], [
+        createButton(previewLocked ? "解锁" : "锁定", () => {
+          previewLocked = !previewLocked;
+          savePreferences();
+          render();
+        })
+      ])
     );
+    mainGrid.append(mainLeft, mainRight);
+    body.append(mainGrid);
     panel.append(header, body);
     applyPanelPosition(panel);
     if (options.restoreTextarea && !inputCollapsed) {
@@ -1327,6 +1595,7 @@
           rawInput = plan.rawInput;
           settings = plan.settings;
           exercises = plan.savedExercises;
+          activePlanTitle = plan.title ?? document.title;
           selectedStartIndex = 0;
           clearRestTimer();
           resetRuntime();
@@ -1376,7 +1645,10 @@
       exercises = plan.savedExercises;
       inputCollapsed = preferences.inputCollapsed;
       previewCollapsed = preferences.previewCollapsed;
+      managerCollapsed = preferences.managerCollapsed;
+      previewLocked = preferences.previewLocked;
       panelPosition = preferences.panelPosition;
+      activePlanTitle = plan.title ?? document.title;
       selectedStartIndex = 0;
       resetRuntime();
       video = nextVideo;
