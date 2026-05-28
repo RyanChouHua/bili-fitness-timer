@@ -152,7 +152,7 @@ function normalizeWorkTab(value: unknown): WorkTab {
     : 'groups'
 }
 
-function createEmptyGroup(title = '训练分组 1'): StoredPlan {
+function createEmptyGroup(title = '子分组 1'): StoredPlan {
   const now = Date.now()
   return {
     id: createGroupId(),
@@ -236,7 +236,7 @@ function loadPlanLibrary(): StoredPlanLibrary {
     }
 
     const groups = parsed.groups
-      .map((group, index) => normalizeStoredPlan(group, `训练分组 ${index + 1}`, index))
+      .map((group, index) => normalizeStoredPlan(group, `子分组 ${index + 1}`, index))
       .filter((group): group is StoredPlan => group !== null)
     if (groups.length === 0) {
       return fallback
@@ -309,7 +309,7 @@ function savePlan(statusText = '已自动保存', nextActiveGroupId = activeGrou
 
   if (!hasActiveGroup) {
     nextGroups.push({
-      ...createEmptyGroup(activePlanTitle || '训练分组 1'),
+      ...createEmptyGroup(activePlanTitle || '子分组 1'),
       id: nextActiveGroupId || createGroupId(),
       rawInput,
       settings,
@@ -668,7 +668,7 @@ async function importPlanFromFile(file: File): Promise<void> {
     imported,
     parsed.settings,
     file.name.replace(/\.json$/i, ''),
-    '已导入本地 JSON 为新分组',
+    '已导入本地 JSON 为新子分组',
   )
 }
 
@@ -705,7 +705,7 @@ async function importPlanFromOnline(): Promise<void> {
       throw new Error(`在线时间戳格式错误：${parseResult.errors[0]}`)
     }
 
-    addImportedPlanGroup(imported, undefined, document.title, `已在线导入 ${bvid} 为新分组`)
+    addImportedPlanGroup(imported, undefined, document.title, `已在线导入 ${bvid} 为新子分组`)
   } catch (error) {
     saveStatusText = error instanceof Error ? error.message : '在线导入失败'
   } finally {
@@ -736,7 +736,7 @@ function openImportPicker(): void {
 function switchToGroup(groupId: string): void {
   const group = planGroups.find(item => item.id === groupId)
   if (!group) {
-    saveStatusText = '未找到训练分组'
+    saveStatusText = '未找到当前视频下的子分组'
     render()
     return
   }
@@ -744,33 +744,33 @@ function switchToGroup(groupId: string): void {
   if (group.id === activeGroupId) {
     return
   }
-  savePlan('已保存当前分组')
+  savePlan('已保存当前子分组')
   const latestGroup = planGroups.find(item => item.id === groupId)
   if (!latestGroup) {
     return
   }
   applyPlanGroup(latestGroup, planGroups)
-  persistPlanLibrary('已选择训练分组')
+  persistPlanLibrary('已切换当前视频子分组')
   render()
 }
 
 function createNewGroup(): void {
-  savePlan('已保存当前分组')
-  const group = createEmptyGroup(`训练分组 ${planGroups.length + 1}`)
+  savePlan('已保存当前子分组')
+  const group = createEmptyGroup(`子分组 ${planGroups.length + 1}`)
   planGroups = [...planGroups, group]
   applyPlanGroup(group, planGroups)
-  persistPlanLibrary('已创建并切换到空白分组')
+  persistPlanLibrary('已创建并切换到空白子分组')
   render()
 }
 
 function duplicateCurrentGroup(): void {
-  savePlan('已保存当前分组')
+  savePlan('已保存当前子分组')
   const current = getActiveGroup()
   if (!current) {
     return
   }
   const now = Date.now()
-  const nextTitle = `${current.title ?? '训练分组'} 副本`
+  const nextTitle = `${current.title ?? '子分组'} 副本`
   const group: StoredPlan = {
     ...current,
     id: createGroupId(),
@@ -790,11 +790,11 @@ function deleteCurrentGroup(): void {
     return
   }
   if (planGroups.length <= 1) {
-    window.alert('当前视频至少保留一个训练分组')
+    window.alert('当前视频至少保留一个子分组')
     return
   }
-  const label = current.title ?? '当前分组'
-  if (!window.confirm(`删除训练分组：${label}？`)) {
+  const label = current.title ?? '当前子分组'
+  if (!window.confirm(`删除当前视频子分组：${label}？`)) {
     return
   }
 
@@ -807,7 +807,7 @@ function deleteCurrentGroup(): void {
   }
   planGroups = nextGroups
   applyPlanGroup(nextGroup, planGroups)
-  persistPlanLibrary('已删除当前分组并切换到相邻分组')
+  persistPlanLibrary('已删除当前子分组并切换到相邻子分组')
   render()
 }
 
@@ -1549,7 +1549,7 @@ function createTabBar(): HTMLElement {
   const tabs = document.createElement('div')
   tabs.className = 'bft-tabs'
   const items: Array<{ id: WorkTab; label: string }> = [
-    { id: 'groups', label: '分组' },
+    { id: 'groups', label: '子分组' },
     { id: 'preview', label: '预览' },
     { id: 'settings', label: '设置' },
   ]
@@ -1665,7 +1665,7 @@ function createManagerList(): HTMLElement {
   if (groups.length === 0) {
     const empty = document.createElement('div')
     empty.className = 'bft-empty'
-    empty.textContent = '暂无训练分组'
+    empty.textContent = '当前视频暂无子分组'
     wrapper.append(empty)
     return wrapper
   }
@@ -1682,7 +1682,7 @@ function createManagerList(): HTMLElement {
     const content = document.createElement('div')
     content.className = 'bft-manager-content'
     const title = document.createElement('strong')
-    title.textContent = group.title || `训练分组 ${index + 1}`
+    title.textContent = group.title || `子分组 ${index + 1}`
     const meta = document.createElement('span')
     meta.className = 'bft-muted'
     const updatedText = group.updatedAt
@@ -1745,19 +1745,19 @@ function createGroupActions(): HTMLElement {
   wrapper.className = 'bft-tool-group'
   const label = document.createElement('span')
   label.className = 'bft-tool-label'
-  label.textContent = `当前视频分组 · ${planGroups.length}`
+  label.textContent = `${getCurrentStorageId()} · 子分组 ${planGroups.length}`
   const pickerRow = document.createElement('div')
   pickerRow.className = 'bft-row'
   const pickerLabel = document.createElement('label')
   pickerLabel.className = 'bft-row bft-grow'
   const pickerText = document.createElement('span')
-  pickerText.textContent = '当前分组'
+  pickerText.textContent = '当前子分组'
   const picker = document.createElement('select')
   picker.className = 'bft-select bft-grow'
   planGroups.forEach((group, index) => {
     const option = document.createElement('option')
     option.value = group.id
-    option.textContent = group.title || `训练分组 ${index + 1}`
+    option.textContent = group.title || `子分组 ${index + 1}`
     option.selected = group.id === activeGroupId
     picker.append(option)
   })
@@ -1769,9 +1769,9 @@ function createGroupActions(): HTMLElement {
   const actions = document.createElement('div')
   actions.className = 'bft-row'
   actions.append(
-    createButton('新建空白分组', createNewGroup, 'bft-primary'),
-    createButton('复制为新分组', duplicateCurrentGroup),
-    createButton('删除当前分组', deleteCurrentGroup, 'bft-danger'),
+    createButton('新建空白子分组', createNewGroup, 'bft-primary'),
+    createButton('复制为子分组', duplicateCurrentGroup),
+    createButton('删除当前子分组', deleteCurrentGroup, 'bft-danger'),
   )
   wrapper.append(label, pickerRow, actions)
   return wrapper
