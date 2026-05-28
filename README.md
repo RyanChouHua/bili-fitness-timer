@@ -28,11 +28,11 @@ https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/dist/bili-
 - “完成本组”是独立大按钮，训练中更适合触控。
 - 休息结束播放 Web Audio 提示音，支持 `1s / 2s / 3s / 5s`。
 - 支持选择从某个动作开始训练。
-- 支持本地 JSON 导入/导出，保留计划标题、作者和备注。
+- 支持本地 JSON 导入/导出，保留当前 BV 视频分组下的全部子分组、标题、作者和备注。
 - 支持按 BV 号在线导入 GitHub raw 时间戳文件。
-- 计划按当前 BV 号保存到 `localStorage`；同一个 BV 视频下可保存多个子分组，适合多天不同训练项目。
-- 支持当前视频子分组管理，可新建空白子分组、复制为子分组、切换或删除子分组，并编辑标题、作者和备注。
-- 训练控制区和时间戳录入固定在左列；右列通过子分组、预览、设置切换，子分组列表支持分页和滚动。
+- 计划按当前 BV 号保存到 `localStorage`；一个 BV 是一个视频分组，视频分组下可保存多个子分组，适合周一到周六等不同训练项目。
+- 支持当前视频分组的子分组管理，可新建空白子分组、复制为子分组、切换或删除子分组，并编辑标题、作者和备注。
+- 训练控制区和时间戳录入固定在左列；右列通过分组、预览、设置切换，子分组列表支持分页和滚动。
 - 桌面和平板悬浮面板支持拖动位置和右下角拖拽缩放，收起后只保留小标题栏。
 - 动作预览支持锁定/解锁，解锁后训练中可直接切换动作。
 - PC 使用紧凑悬浮面板，平板和手机浏览器有响应式布局。
@@ -55,26 +55,22 @@ https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/timestamps
 
 ```json
 {
-  "bvid": "BV1xx411c7mD",
-  "title": "Example workout timestamps",
-  "author": "Bilibili Fitness Timer",
-  "notes": "Example local and online workout timestamp plan.",
-  "rawInput": "Push Up 00:12-00:28 3x8-12 rest45",
-  "exercises": [
+  "bvid": "BV1TT4y1f7A3",
+  "title": "Video workout group",
+  "groups": [
     {
-      "name": "Push Up",
-      "start": 12,
-      "end": 28,
-      "sets": 3,
-      "minReps": 8,
-      "maxReps": 12,
-      "restSeconds": 45
+      "title": "周一动作",
+      "rawInput": "俯卧撑 00:12-00:28 3x8-12 rest45"
+    },
+    {
+      "title": "周二动作",
+      "rawInput": "深蹲 01:05-01:22 4x10 rest60"
     }
   ]
 }
 ```
 
-脚本优先使用 `rawInput`；如果没有 `rawInput`，会从 `exercises` 生成录入文本。404、网络失败或 JSON 格式错误时，不覆盖本地已有数据。
+每个 `groups[]` 条目就是该 BV 视频分组下的一个子分组，例如 `周一动作`、`周二动作`。子分组优先使用 `rawInput`；如果没有 `rawInput`，会从 `exercises` 生成录入文本。旧版单计划 JSON 仍兼容，会作为一个子分组导入。404、网络失败或 JSON 格式错误时，不覆盖本地已有数据。
 
 ## 开发
 

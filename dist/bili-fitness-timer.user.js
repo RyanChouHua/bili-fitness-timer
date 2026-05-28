@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.5
+// @version      0.4.6
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
@@ -191,9 +191,9 @@
     const trimmed = value.trim();
     return trimmed ? trimmed : null;
   }
-  function normalizeImportedPlanData(value) {
+  function normalizeImportedPlanGroup(value) {
     if (!value || typeof value !== "object") {
-      throw new Error("JSON 必须是对象");
+      throw new Error("子分组必须是对象");
     }
     const payload = value;
     const exercises2 = normalizeExerciseList(payload.exercises);
@@ -201,15 +201,43 @@
     const importedExercises = exercises2.length > 0 ? exercises2 : savedExercises;
     const rawInput2 = typeof payload.rawInput === "string" && payload.rawInput.trim() ? payload.rawInput : serializeExercises(importedExercises);
     if (!rawInput2.trim() && importedExercises.length === 0) {
-      throw new Error("JSON 缺少 rawInput 或 exercises");
+      throw new Error("子分组缺少 rawInput 或 exercises");
     }
+    return {
+      id: normalizeOptionalText(payload.id),
+      title: normalizeOptionalText(payload.title),
+      author: normalizeOptionalText(payload.author),
+      notes: normalizeOptionalText(payload.notes),
+      rawInput: rawInput2,
+      exercises: importedExercises,
+      settings: payload.settings ?? null
+    };
+  }
+  function normalizeImportedPlanData(value) {
+    if (!value || typeof value !== "object") {
+      throw new Error("JSON 必须是对象");
+    }
+    const payload = value;
+    const groups = Array.isArray(payload.groups) ? payload.groups.map((group, index) => {
+      try {
+        return normalizeImportedPlanGroup(group);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "格式错误";
+        throw new Error(`第 ${index + 1} 个子分组：${message}`);
+      }
+    }) : [normalizeImportedPlanGroup(value)];
+    if (groups.length === 0) {
+      throw new Error("JSON 缺少子分组");
+    }
+    const firstGroup = groups[0];
     return {
       bvid: typeof payload.bvid === "string" ? normalizeBvid(payload.bvid) : null,
       title: normalizeOptionalText(payload.title),
       author: normalizeOptionalText(payload.author),
       notes: normalizeOptionalText(payload.notes),
-      rawInput: rawInput2,
-      exercises: importedExercises
+      rawInput: firstGroup.rawInput,
+      exercises: firstGroup.exercises,
+      groups
     };
   }
   const panelId = "bili-fitness-timer-panel";
@@ -658,17 +686,36 @@
     });
   }
   function exportPlan() {
+    savePlan("已导出前自动保存");
     const parseResult = parsePlan(rawInput);
     const savedExercises = parseResult.errors.length === 0 ? parseResult.exercises : exercises;
+    const nextGroups = planGroups.map(
+      (group) => group.id === activeGroupId ? {
+        ...group,
+        rawInput,
+        settings,
+        savedExercises,
+        title: activePlanTitle || group.title,
+        author: optionalText(activePlanAuthor),
+        notes: optionalText(activePlanNotes)
+      } : group
+    );
     const payload = {
       bvid: getCurrentBvid(),
-      title: activePlanTitle || document.title || void 0,
-      author: optionalText(activePlanAuthor),
-      notes: optionalText(activePlanNotes),
-      rawInput,
-      settings,
-      savedExercises,
-      exercises: savedExercises,
+      title: document.title || getCurrentStorageId(),
+      activeGroupId,
+      groups: nextGroups.map((group) => ({
+        id: group.id,
+        title: group.title,
+        author: group.author,
+        notes: group.notes,
+        rawInput: group.rawInput,
+        settings: group.settings,
+        savedExercises: group.id === activeGroupId ? savedExercises : group.savedExercises,
+        exercises: group.id === activeGroupId ? savedExercises : group.savedExercises,
+        createdAt: group.createdAt,
+        updatedAt: group.updatedAt
+      })),
       updatedAt: Date.now()
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -680,38 +727,60 @@
     link.click();
     URL.revokeObjectURL(link.href);
   }
-  function addImportedPlanGroup(imported, parsedSettings, fallbackTitle, statusText) {
-    const nextGroup = {
-      id: createGroupId(),
-      rawInput: imported.rawInput,
-      settings: {
-        beepDuration: typeof (parsedSettings == null ? void 0 : parsedSettings.beepDuration) === "number" ? parsedSettings.beepDuration : settings.beepDuration,
-        pauseDuringRest: typeof (parsedSettings == null ? void 0 : parsedSettings.pauseDuringRest) === "boolean" ? parsedSettings.pauseDuringRest : settings.pauseDuringRest
-      },
-      savedExercises: imported.exercises,
-      bvid: imported.bvid ?? getCurrentBvid(),
-      title: imported.title ?? fallbackTitle,
-      author: imported.author ?? void 0,
-      notes: imported.notes ?? void 0,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
+  function normalizeImportedSettings(value, fallback) {
+    if (!value || typeof value !== "object") {
+      return { ...fallback };
+    }
+    const parsed = value;
+    return {
+      beepDuration: typeof parsed.beepDuration === "number" ? parsed.beepDuration : fallback.beepDuration,
+      pauseDuringRest: typeof parsed.pauseDuringRest === "boolean" ? parsed.pauseDuringRest : fallback.pauseDuringRest
     };
-    planGroups = [...planGroups, nextGroup];
-    applyPlanGroup(nextGroup, planGroups);
+  }
+  function createStoredPlanFromImportedGroup(group, importedBvid, fallbackTitle) {
+    const now = Date.now();
+    return {
+      id: createGroupId(),
+      rawInput: group.rawInput,
+      settings: normalizeImportedSettings(group.settings, settings),
+      savedExercises: group.exercises,
+      bvid: importedBvid ?? getCurrentBvid(),
+      title: group.title ?? fallbackTitle,
+      author: group.author ?? void 0,
+      notes: group.notes ?? void 0,
+      createdAt: now,
+      updatedAt: now
+    };
+  }
+  function addImportedPlanGroups(imported, fallbackTitle, statusText) {
+    const importedGroups = imported.groups.map(
+      (group, index) => createStoredPlanFromImportedGroup(
+        group,
+        imported.bvid,
+        imported.groups.length === 1 ? imported.title ?? fallbackTitle : group.title ?? `${fallbackTitle} ${index + 1}`
+      )
+    );
+    const nextActiveGroup = importedGroups[0];
+    if (!nextActiveGroup) {
+      saveStatusText = "未找到可导入的子分组";
+      render();
+      return;
+    }
+    planGroups = [...planGroups, ...importedGroups];
+    applyPlanGroup(nextActiveGroup, planGroups);
     const parseResult = parsePlan(rawInput);
-    exercises = parseResult.errors.length === 0 ? parseResult.exercises : imported.exercises;
-    savePlan(statusText, nextGroup.id);
+    exercises = parseResult.errors.length === 0 ? parseResult.exercises : nextActiveGroup.savedExercises;
+    savePlan(`${statusText} ${importedGroups.length} 个子分组`, nextActiveGroup.id);
     render();
   }
   async function importPlanFromFile(file) {
     const text = await file.text();
     const parsed = JSON.parse(text);
     const imported = normalizeImportedPlanData(parsed);
-    addImportedPlanGroup(
+    addImportedPlanGroups(
       imported,
-      parsed.settings,
       file.name.replace(/\.json$/i, ""),
-      "已导入本地 JSON 为新子分组"
+      "已导入本地 JSON："
     );
   }
   async function importPlanFromOnline() {
@@ -738,11 +807,13 @@
       if (imported.bvid && imported.bvid !== bvid) {
         throw new Error(`在线文件 BV 号不匹配：${imported.bvid}`);
       }
-      const parseResult = parsePlan(imported.rawInput);
-      if (parseResult.errors.length > 0) {
-        throw new Error(`在线时间戳格式错误：${parseResult.errors[0]}`);
+      for (const group of imported.groups) {
+        const parseResult = parsePlan(group.rawInput);
+        if (parseResult.errors.length > 0) {
+          throw new Error(`${group.title ?? "子分组"} 时间戳格式错误：${parseResult.errors[0]}`);
+        }
       }
-      addImportedPlanGroup(imported, void 0, document.title, `已在线导入 ${bvid} 为新子分组`);
+      addImportedPlanGroups(imported, document.title, `已在线导入 ${bvid}：`);
     } catch (error) {
       saveStatusText = error instanceof Error ? error.message : "在线导入失败";
     } finally {
@@ -1544,7 +1615,7 @@
     const tabs = document.createElement("div");
     tabs.className = "bft-tabs";
     const items = [
-      { id: "groups", label: "子分组" },
+      { id: "groups", label: "分组" },
       { id: "preview", label: "预览" },
       { id: "settings", label: "设置" }
     ];
@@ -1719,7 +1790,7 @@
     wrapper.className = "bft-tool-group";
     const label = document.createElement("span");
     label.className = "bft-tool-label";
-    label.textContent = `${getCurrentStorageId()} · 子分组 ${planGroups.length}`;
+    label.textContent = `视频分组 ${getCurrentStorageId()} · ${planGroups.length} 个子分组`;
     const pickerRow = document.createElement("div");
     pickerRow.className = "bft-row";
     const pickerLabel = document.createElement("label");

@@ -52,9 +52,21 @@ const imported = normalizeImportedPlanData(timestampFile)
 assert.equal(imported.bvid, bvid)
 assert.equal(imported.title, 'Example workout timestamps')
 assert.equal(imported.author, 'Bilibili Fitness Timer')
-assert.equal(imported.notes, 'Example local and online workout timestamp plan.')
+assert.equal(imported.notes, 'Example video group with multiple day subgroups.')
 assert.equal(imported.exercises.length > 0 || imported.rawInput.length > 0, true)
 assert.deepEqual(parsePlan(imported.rawInput).errors, [])
+assert.equal(imported.groups.length, 2)
+assert.equal(imported.groups[0]?.title, 'Monday workout')
+assert.equal(imported.groups[1]?.title, 'Tuesday workout')
+assert.deepEqual(parsePlan(imported.groups[1]?.rawInput ?? '').errors, [])
+
+const legacyImport = normalizeImportedPlanData({
+  bvid,
+  title: 'Legacy single plan',
+  rawInput: 'Push Up 00:12-00:28 3x8-12 rest45',
+})
+assert.equal(legacyImport.groups.length, 1)
+assert.equal(legacyImport.groups[0]?.title, 'Legacy single plan')
 
 const summary = summarizeStoredPlan(
   `bili-fitness-timer:${bvid}`,

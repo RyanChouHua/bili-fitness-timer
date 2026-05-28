@@ -1,5 +1,6 @@
 import {
   type Exercise,
+  type ImportedPlanGroupData,
   booleanPreference,
   defaultPreferencesStorageKey,
   extractBvidFromUrl,
@@ -600,17 +601,38 @@ function setupPanelResize(handle: HTMLElement, panel: HTMLElement): void {
 }
 
 function exportPlan(): void {
+  savePlan('已导出前自动保存')
   const parseResult = parsePlan(rawInput)
   const savedExercises = parseResult.errors.length === 0 ? parseResult.exercises : exercises
+  const nextGroups = planGroups.map(group =>
+    group.id === activeGroupId
+      ? {
+          ...group,
+          rawInput,
+          settings,
+          savedExercises,
+          title: activePlanTitle || group.title,
+          author: optionalText(activePlanAuthor),
+          notes: optionalText(activePlanNotes),
+        }
+      : group,
+  )
   const payload = {
     bvid: getCurrentBvid(),
-    title: activePlanTitle || document.title || undefined,
-    author: optionalText(activePlanAuthor),
-    notes: optionalText(activePlanNotes),
-    rawInput,
-    settings,
-    savedExercises,
-    exercises: savedExercises,
+    title: document.title || getCurrentStorageId(),
+    activeGroupId,
+    groups: nextGroups.map(group => ({
+      id: group.id,
+      title: group.title,
+      author: group.author,
+      notes: group.notes,
+      rawInput: group.rawInput,
+      settings: group.settings,
+      savedExercises: group.id === activeGroupId ? savedExercises : group.savedExercises,
+      exercises: group.id === activeGroupId ? savedExercises : group.savedExercises,
+      createdAt: group.createdAt,
+      updatedAt: group.updatedAt,
+    })),
     updatedAt: Date.now(),
   }
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -623,52 +645,83 @@ function exportPlan(): void {
   URL.revokeObjectURL(link.href)
 }
 
-function addImportedPlanGroup(
+function normalizeImportedSettings(value: unknown, fallback: Settings): Settings {
+  if (!value || typeof value !== 'object') {
+    return { ...fallback }
+  }
+
+  const parsed = value as Partial<Settings>
+  return {
+    beepDuration:
+      typeof parsed.beepDuration === 'number'
+        ? parsed.beepDuration
+        : fallback.beepDuration,
+    pauseDuringRest:
+      typeof parsed.pauseDuringRest === 'boolean'
+        ? parsed.pauseDuringRest
+        : fallback.pauseDuringRest,
+  }
+}
+
+function createStoredPlanFromImportedGroup(
+  group: ImportedPlanGroupData,
+  importedBvid: string | null,
+  fallbackTitle: string,
+): StoredPlan {
+  const now = Date.now()
+  return {
+    id: createGroupId(),
+    rawInput: group.rawInput,
+    settings: normalizeImportedSettings(group.settings, settings),
+    savedExercises: group.exercises,
+    bvid: importedBvid ?? getCurrentBvid(),
+    title: group.title ?? fallbackTitle,
+    author: group.author ?? undefined,
+    notes: group.notes ?? undefined,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function addImportedPlanGroups(
   imported: ReturnType<typeof normalizeImportedPlanData>,
-  parsedSettings: Partial<Settings> | undefined,
   fallbackTitle: string,
   statusText: string,
 ): void {
-  const nextGroup: StoredPlan = {
-    id: createGroupId(),
-    rawInput: imported.rawInput,
-    settings: {
-      beepDuration:
-        typeof parsedSettings?.beepDuration === 'number'
-          ? parsedSettings.beepDuration
-          : settings.beepDuration,
-      pauseDuringRest:
-        typeof parsedSettings?.pauseDuringRest === 'boolean'
-          ? parsedSettings.pauseDuringRest
-          : settings.pauseDuringRest,
-    },
-    savedExercises: imported.exercises,
-    bvid: imported.bvid ?? getCurrentBvid(),
-    title: imported.title ?? fallbackTitle,
-    author: imported.author ?? undefined,
-    notes: imported.notes ?? undefined,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+  const importedGroups = imported.groups.map((group, index) =>
+    createStoredPlanFromImportedGroup(
+      group,
+      imported.bvid,
+      imported.groups.length === 1
+        ? imported.title ?? fallbackTitle
+        : group.title ?? `${fallbackTitle} ${index + 1}`,
+    ),
+  )
+  const nextActiveGroup = importedGroups[0]
+  if (!nextActiveGroup) {
+    saveStatusText = '未找到可导入的子分组'
+    render()
+    return
   }
-  planGroups = [...planGroups, nextGroup]
-  applyPlanGroup(nextGroup, planGroups)
+
+  planGroups = [...planGroups, ...importedGroups]
+  applyPlanGroup(nextActiveGroup, planGroups)
 
   const parseResult = parsePlan(rawInput)
-  exercises = parseResult.errors.length === 0 ? parseResult.exercises : imported.exercises
-  savePlan(statusText, nextGroup.id)
+  exercises = parseResult.errors.length === 0 ? parseResult.exercises : nextActiveGroup.savedExercises
+  savePlan(`${statusText} ${importedGroups.length} 个子分组`, nextActiveGroup.id)
   render()
 }
 
 async function importPlanFromFile(file: File): Promise<void> {
   const text = await file.text()
-  const parsed = JSON.parse(text) as Partial<StoredPlan>
+  const parsed = JSON.parse(text)
   const imported = normalizeImportedPlanData(parsed)
 
-  addImportedPlanGroup(
+  addImportedPlanGroups(
     imported,
-    parsed.settings,
     file.name.replace(/\.json$/i, ''),
-    '已导入本地 JSON 为新子分组',
+    '已导入本地 JSON：',
   )
 }
 
@@ -700,12 +753,14 @@ async function importPlanFromOnline(): Promise<void> {
       throw new Error(`在线文件 BV 号不匹配：${imported.bvid}`)
     }
 
-    const parseResult = parsePlan(imported.rawInput)
-    if (parseResult.errors.length > 0) {
-      throw new Error(`在线时间戳格式错误：${parseResult.errors[0]}`)
+    for (const group of imported.groups) {
+      const parseResult = parsePlan(group.rawInput)
+      if (parseResult.errors.length > 0) {
+        throw new Error(`${group.title ?? '子分组'} 时间戳格式错误：${parseResult.errors[0]}`)
+      }
     }
 
-    addImportedPlanGroup(imported, undefined, document.title, `已在线导入 ${bvid} 为新子分组`)
+    addImportedPlanGroups(imported, document.title, `已在线导入 ${bvid}：`)
   } catch (error) {
     saveStatusText = error instanceof Error ? error.message : '在线导入失败'
   } finally {
@@ -1549,7 +1604,7 @@ function createTabBar(): HTMLElement {
   const tabs = document.createElement('div')
   tabs.className = 'bft-tabs'
   const items: Array<{ id: WorkTab; label: string }> = [
-    { id: 'groups', label: '子分组' },
+    { id: 'groups', label: '分组' },
     { id: 'preview', label: '预览' },
     { id: 'settings', label: '设置' },
   ]
@@ -1745,7 +1800,7 @@ function createGroupActions(): HTMLElement {
   wrapper.className = 'bft-tool-group'
   const label = document.createElement('span')
   label.className = 'bft-tool-label'
-  label.textContent = `${getCurrentStorageId()} · 子分组 ${planGroups.length}`
+  label.textContent = `视频分组 ${getCurrentStorageId()} · ${planGroups.length} 个子分组`
   const pickerRow = document.createElement('div')
   pickerRow.className = 'bft-row'
   const pickerLabel = document.createElement('label')

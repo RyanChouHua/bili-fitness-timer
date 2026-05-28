@@ -4,7 +4,7 @@ import { defineConfig, type Plugin } from 'vite'
 const userscriptBanner = `// ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.5
+// @version      0.4.6
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*

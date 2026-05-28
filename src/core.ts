@@ -21,6 +21,17 @@ export interface ImportedPlanData {
   notes: string | null
   rawInput: string
   exercises: Exercise[]
+  groups: ImportedPlanGroupData[]
+}
+
+export interface ImportedPlanGroupData {
+  id: string | null
+  title: string | null
+  author: string | null
+  notes: string | null
+  rawInput: string
+  exercises: Exercise[]
+  settings: unknown
 }
 
 export interface SavedPlanSummary {
@@ -287,19 +298,20 @@ function normalizeOptionalText(value: unknown): string | null {
   return trimmed ? trimmed : null
 }
 
-export function normalizeImportedPlanData(value: unknown): ImportedPlanData {
+function normalizeImportedPlanGroup(value: unknown): ImportedPlanGroupData {
   if (!value || typeof value !== 'object') {
-    throw new Error('JSON 必须是对象')
+    throw new Error('子分组必须是对象')
   }
 
   const payload = value as {
-    bvid?: unknown
+    id?: unknown
     title?: unknown
     author?: unknown
     notes?: unknown
     rawInput?: unknown
     exercises?: unknown
     savedExercises?: unknown
+    settings?: unknown
   }
   const exercises = normalizeExerciseList(payload.exercises)
   const savedExercises = normalizeExerciseList(payload.savedExercises)
@@ -310,16 +322,57 @@ export function normalizeImportedPlanData(value: unknown): ImportedPlanData {
       : serializeExercises(importedExercises)
 
   if (!rawInput.trim() && importedExercises.length === 0) {
-    throw new Error('JSON 缺少 rawInput 或 exercises')
+    throw new Error('子分组缺少 rawInput 或 exercises')
   }
+
+  return {
+    id: normalizeOptionalText(payload.id),
+    title: normalizeOptionalText(payload.title),
+    author: normalizeOptionalText(payload.author),
+    notes: normalizeOptionalText(payload.notes),
+    rawInput,
+    exercises: importedExercises,
+    settings: payload.settings ?? null,
+  }
+}
+
+export function normalizeImportedPlanData(value: unknown): ImportedPlanData {
+  if (!value || typeof value !== 'object') {
+    throw new Error('JSON 必须是对象')
+  }
+
+  const payload = value as {
+    bvid?: unknown
+    title?: unknown
+    author?: unknown
+    notes?: unknown
+    groups?: unknown
+  }
+  const groups = Array.isArray(payload.groups)
+    ? payload.groups.map((group, index) => {
+        try {
+          return normalizeImportedPlanGroup(group)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '格式错误'
+          throw new Error(`第 ${index + 1} 个子分组：${message}`)
+        }
+      })
+    : [normalizeImportedPlanGroup(value)]
+
+  if (groups.length === 0) {
+    throw new Error('JSON 缺少子分组')
+  }
+
+  const firstGroup = groups[0]
 
   return {
     bvid: typeof payload.bvid === 'string' ? normalizeBvid(payload.bvid) : null,
     title: normalizeOptionalText(payload.title),
     author: normalizeOptionalText(payload.author),
     notes: normalizeOptionalText(payload.notes),
-    rawInput,
-    exercises: importedExercises,
+    rawInput: firstGroup.rawInput,
+    exercises: firstGroup.exercises,
+    groups,
   }
 }
 

@@ -2,26 +2,21 @@
   "bvid": "BV1xx411c7mD",
   "title": "Example workout timestamps",
   "author": "Bilibili Fitness Timer",
-  "notes": "Example local and online workout timestamp plan.",
-  "rawInput": "Push Up 00:12-00:28 3x8-12 rest45\nSquat 01:05-01:22 4x10 rest60",
-  "exercises": [
+  "notes": "Example video group with multiple day subgroups.",
+  "groups": [
     {
-      "name": "Push Up",
-      "start": 12,
-      "end": 28,
-      "sets": 3,
-      "minReps": 8,
-      "maxReps": 12,
-      "restSeconds": 45
+      "id": "monday",
+      "title": "Monday workout",
+      "author": "Bilibili Fitness Timer",
+      "notes": "Push and squat practice.",
+      "rawInput": "Push Up 00:12-00:28 3x8-12 rest45\nSquat 01:05-01:22 4x10 rest60"
     },
     {
-      "name": "Squat",
-      "start": 65,
-      "end": 82,
-      "sets": 4,
-      "minReps": 10,
-      "maxReps": 10,
-      "restSeconds": 60
+      "id": "tuesday",
+      "title": "Tuesday workout",
+      "author": "Bilibili Fitness Timer",
+      "notes": "Core and mobility practice.",
+      "rawInput": "Plank 02:10-02:28 3x1 rest45\nHip Hinge 03:05-03:22 4x10 rest60"
     }
   ]
 }
