@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.2
+// @version      0.4.3
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
@@ -230,6 +230,7 @@
   let groupPage = 0;
   let selectedStartIndex = 0;
   let panelPosition = null;
+  let panelSize = null;
   let saveStatusText = "已自动保存";
   let onlineImportBusy = false;
   let runtime = {
@@ -451,14 +452,17 @@
       if (!saved) {
         return {
           panelPosition: null,
+          panelSize: null,
           previewLocked: true,
           activeTab: "groups"
         };
       }
       const parsed = JSON.parse(saved);
       const position = parsed.panelPosition;
+      const size = parsed.panelSize;
       const nextPreferences = {
         panelPosition: null,
+        panelSize: null,
         previewLocked: booleanPreference(parsed.previewLocked, true),
         activeTab: normalizeWorkTab(parsed.activeTab)
       };
@@ -468,16 +472,24 @@
           top: position.top
         };
       }
+      if (size && typeof size.width === "number" && typeof size.height === "number") {
+        nextPreferences.panelSize = {
+          width: size.width,
+          height: size.height
+        };
+      }
       return nextPreferences;
     } catch {
       return {
         panelPosition: null,
+        panelSize: null,
         previewLocked: true,
         activeTab: "groups"
       };
     }
     return {
       panelPosition: null,
+      panelSize: null,
       previewLocked: true,
       activeTab: "groups"
     };
@@ -487,6 +499,7 @@
       preferencesStorageKey,
       JSON.stringify({
         panelPosition,
+        panelSize,
         previewLocked,
         activeTab: activeWorkTab
       })
@@ -494,6 +507,33 @@
   }
   function isMobileViewport() {
     return window.matchMedia("(max-width: 720px)").matches;
+  }
+  function getPanelSizeLimits() {
+    const margin = 10;
+    return {
+      minWidth: 420,
+      minHeight: 360,
+      maxWidth: Math.max(420, window.innerWidth - margin * 2),
+      maxHeight: Math.max(360, window.innerHeight - margin * 2)
+    };
+  }
+  function clampPanelSize(size) {
+    const limits = getPanelSizeLimits();
+    return {
+      width: Math.min(Math.max(size.width, limits.minWidth), limits.maxWidth),
+      height: Math.min(Math.max(size.height, limits.minHeight), limits.maxHeight)
+    };
+  }
+  function applyPanelSize(panel) {
+    if (collapsed || isMobileViewport() || !panelSize) {
+      panel.style.width = "";
+      panel.style.height = "";
+      return;
+    }
+    const nextSize = clampPanelSize(panelSize);
+    panelSize = nextSize;
+    panel.style.width = `${nextSize.width}px`;
+    panel.style.height = `${nextSize.height}px`;
   }
   function clampPanelPosition(position, panel) {
     const margin = 10;
@@ -507,12 +547,14 @@
   }
   function applyPanelPosition(panel) {
     if (isMobileViewport()) {
+      applyPanelSize(panel);
       panel.style.left = "";
       panel.style.right = "";
       panel.style.top = "";
       panel.style.bottom = "";
       return;
     }
+    applyPanelSize(panel);
     if (!panelPosition) {
       panel.style.left = "";
       panel.style.right = "";
@@ -529,7 +571,7 @@
   }
   function setupPanelDrag(header, panel) {
     header.addEventListener("pointerdown", (event) => {
-      if (isMobileViewport() || event.button !== 0) {
+      if (collapsed || isMobileViewport() || event.button !== 0) {
         return;
       }
       if (event.target.closest("button")) {
@@ -565,6 +607,54 @@
       header.addEventListener("pointermove", handleMove);
       header.addEventListener("pointerup", handleUp);
       header.addEventListener("pointercancel", handleUp);
+    });
+  }
+  function setupPanelResize(handle, panel) {
+    handle.addEventListener("pointerdown", (event) => {
+      if (collapsed || isMobileViewport() || event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      const startRect = panel.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      if (!panelPosition) {
+        panelPosition = clampPanelPosition({ left: startRect.left, top: startRect.top }, panel);
+        panel.style.left = `${panelPosition.left}px`;
+        panel.style.top = `${panelPosition.top}px`;
+        panel.style.right = "auto";
+        panel.style.bottom = "auto";
+      }
+      handle.setPointerCapture(event.pointerId);
+      panel.classList.add("bft-resizing");
+      const handleMove = (moveEvent) => {
+        const nextSize = clampPanelSize({
+          width: startRect.width + moveEvent.clientX - startX,
+          height: startRect.height + moveEvent.clientY - startY
+        });
+        panelSize = nextSize;
+        panel.style.width = `${nextSize.width}px`;
+        panel.style.height = `${nextSize.height}px`;
+        if (panelPosition) {
+          const nextPosition = clampPanelPosition(panelPosition, panel);
+          panelPosition = nextPosition;
+          panel.style.left = `${nextPosition.left}px`;
+          panel.style.top = `${nextPosition.top}px`;
+          panel.style.right = "auto";
+          panel.style.bottom = "auto";
+        }
+      };
+      const handleUp = (upEvent) => {
+        handle.releasePointerCapture(upEvent.pointerId);
+        panel.classList.remove("bft-resizing");
+        handle.removeEventListener("pointermove", handleMove);
+        handle.removeEventListener("pointerup", handleUp);
+        handle.removeEventListener("pointercancel", handleUp);
+        savePreferences();
+      };
+      handle.addEventListener("pointermove", handleMove);
+      handle.addEventListener("pointerup", handleUp);
+      handle.addEventListener("pointercancel", handleUp);
     });
   }
   function exportPlan() {
@@ -1024,7 +1114,8 @@
       display: none;
     }
     .bft-collapsed {
-      width: auto;
+      width: auto !important;
+      height: auto !important;
       min-width: 96px;
     }
     .bft-control-stack {
@@ -1037,7 +1128,7 @@
     }
     .bft-main-grid {
       display: grid;
-      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr);
       gap: 8px;
       height: 100%;
       min-height: 0;
@@ -1086,7 +1177,9 @@
       font-weight: 700;
     }
     .bft-work-panel {
-      display: grid;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
       gap: 7px;
       min-height: 0;
       overflow: auto;
@@ -1230,16 +1323,18 @@
     }
     .bft-manager-list {
       display: grid;
-      gap: 4px;
-      max-height: 188px;
+      gap: 3px;
+      max-height: 172px;
       overflow-y: auto;
       padding-right: 2px;
       scrollbar-width: thin;
     }
     .bft-manager-item {
       display: grid;
-      gap: 3px;
-      padding: 4px 6px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 5px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.05);
@@ -1248,10 +1343,30 @@
       border-color: rgba(76, 201, 167, 0.85);
       background: rgba(76, 201, 167, 0.12);
     }
-    .bft-manager-item strong,
-    .bft-manager-item .bft-muted {
+    .bft-manager-content {
+      display: grid;
+      gap: 1px;
+      min-width: 0;
+    }
+    .bft-manager-content strong,
+    .bft-manager-content .bft-muted {
       min-width: 0;
       overflow-wrap: anywhere;
+    }
+    .bft-manager-content strong {
+      font-size: 12px;
+      line-height: 1.25;
+    }
+    .bft-manager-content .bft-muted {
+      font-size: 11px;
+      line-height: 1.3;
+    }
+    .bft-manager-item .bft-row {
+      flex-wrap: nowrap;
+    }
+    .bft-manager-item .bft-button {
+      min-height: 24px;
+      padding: 2px 6px;
     }
     .bft-pager {
       display: flex;
@@ -1300,6 +1415,33 @@
       border-radius: 6px;
       background: rgba(255, 81, 81, 0.12);
     }
+    .bft-resize-handle {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 20px;
+      height: 20px;
+      cursor: nwse-resize;
+      touch-action: none;
+      opacity: 0.75;
+    }
+    .bft-resize-handle::after {
+      content: "";
+      position: absolute;
+      right: 5px;
+      bottom: 5px;
+      width: 9px;
+      height: 9px;
+      border-right: 2px solid rgba(246, 247, 249, 0.52);
+      border-bottom: 2px solid rgba(246, 247, 249, 0.52);
+    }
+    .bft-resizing,
+    .bft-resizing * {
+      user-select: none;
+    }
+    .bft-collapsed .bft-resize-handle {
+      display: none;
+    }
     @media (max-width: 720px) {
       #${panelId} {
         left: 6px;
@@ -1343,7 +1485,7 @@
         flex: 1 1 calc(50% - 6px);
       }
       .bft-manager-list {
-        max-height: 144px;
+        max-height: 132px;
       }
       .bft-status {
         padding: 7px;
@@ -1357,6 +1499,9 @@
         width: auto;
         min-width: 88px;
         border-radius: 8px;
+      }
+      .bft-resize-handle {
+        display: none;
       }
     }
     @media (min-width: 721px) and (max-width: 1024px) {
@@ -1514,6 +1659,8 @@
       const index = pageStart + pageIndex;
       const item = document.createElement("div");
       item.className = `bft-manager-item ${group.id === activeGroupId ? "bft-manager-active" : ""}`.trim();
+      const content = document.createElement("div");
+      content.className = "bft-manager-content";
       const title = document.createElement("strong");
       title.textContent = group.title || `训练分组 ${index + 1}`;
       const meta = document.createElement("span");
@@ -1529,14 +1676,14 @@
       extra.textContent = extraTexts.join(" · ");
       const actions = document.createElement("div");
       actions.className = "bft-row";
-      const loadButton = createButton("切换到此分组", () => switchToGroup(group.id), "bft-primary");
+      const loadButton = createButton("切换", () => switchToGroup(group.id), "bft-primary");
       loadButton.disabled = group.id === activeGroupId;
       actions.append(loadButton);
-      item.append(title, meta);
+      content.append(title, meta);
       if (extraTexts.length > 0) {
-        item.append(extra);
+        content.append(extra);
       }
-      item.append(actions);
+      item.append(content, actions);
       wrapper.append(item);
     });
     return wrapper;
@@ -1706,6 +1853,10 @@
     setupPanelDrag(header, panel);
     const body = document.createElement("div");
     body.className = "bft-body";
+    const resizeHandle = document.createElement("div");
+    resizeHandle.className = "bft-resize-handle";
+    resizeHandle.title = "拖拽调整面板大小";
+    setupPanelResize(resizeHandle, panel);
     const controlStack = document.createElement("div");
     controlStack.className = "bft-control-stack";
     const status = document.createElement("div");
@@ -1873,7 +2024,7 @@
     mainRight.append(createTabBar(), createWorkPanel(parseResult, list));
     mainGrid.append(mainLeft, mainRight);
     body.append(mainGrid);
-    panel.append(header, body);
+    panel.append(header, body, resizeHandle);
     applyPanelPosition(panel);
     if (options.restoreTextarea) {
       textarea.focus();
@@ -1959,6 +2110,7 @@
       if (!panel) {
         return;
       }
+      applyPanelSize(panel);
       applyPanelPosition(panel);
       if (!isMobileViewport()) {
         savePreferences();
@@ -1985,6 +2137,7 @@
       previewLocked = preferences.previewLocked;
       activeWorkTab = preferences.activeTab;
       panelPosition = preferences.panelPosition;
+      panelSize = preferences.panelSize;
       video = nextVideo;
       injectStyle();
       setLoopGuard(video);
