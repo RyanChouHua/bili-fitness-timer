@@ -1,6 +1,8 @@
 {
   "bvid": "BV1xx411c7mD",
   "title": "Example workout timestamps",
+  "author": "Bilibili Fitness Timer",
+  "notes": "Example local and online workout timestamp plan.",
   "rawInput": "Push Up 00:12-00:28 3x8-12 rest45\nSquat 01:05-01:22 4x10 rest60",
   "exercises": [
     {

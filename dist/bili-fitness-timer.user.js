@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.3.0
+// @version      0.3.1
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
@@ -187,6 +187,13 @@
     }
     return value.map((item, index) => normalizeExercise(item, index)).filter((item) => item !== null);
   }
+  function normalizeOptionalText(value) {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
   function normalizeImportedPlanData(value) {
     if (!value || typeof value !== "object") {
       throw new Error("JSON 必须是对象");
@@ -201,7 +208,9 @@
     }
     return {
       bvid: typeof payload.bvid === "string" ? normalizeBvid(payload.bvid) : null,
-      title: typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : null,
+      title: normalizeOptionalText(payload.title),
+      author: normalizeOptionalText(payload.author),
+      notes: normalizeOptionalText(payload.notes),
       rawInput: rawInput2,
       exercises: importedExercises
     };
@@ -217,13 +226,15 @@
         return null;
       }
       const bvid = typeof parsed.bvid === "string" ? normalizeBvid(parsed.bvid) : normalizeBvid(storageId);
-      const title = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : bvid ?? storageId;
+      const title = normalizeOptionalText(parsed.title) ?? bvid ?? storageId;
       const updatedAt = typeof parsed.updatedAt === "number" && Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : null;
       return {
         storageKey,
         storageId,
         bvid,
         title,
+        author: normalizeOptionalText(parsed.author),
+        notes: normalizeOptionalText(parsed.notes),
         actionCount: parsedFromInput.length,
         updatedAt
       };
@@ -263,6 +274,8 @@
   let viewportWatcherReady = false;
   let activeStorageKey = "";
   let activePlanTitle = "";
+  let activePlanAuthor = "";
+  let activePlanNotes = "";
   let initInProgress = false;
   let navigationReloadInProgress = false;
   const guardedVideos = /* @__PURE__ */ new WeakSet();
@@ -274,6 +287,13 @@
   }
   function getStorageKey() {
     return getPlanStorageKey(getCurrentStorageId());
+  }
+  function optionalText(value) {
+    if (typeof value !== "string") {
+      return void 0;
+    }
+    const trimmed = value.trim();
+    return trimmed ? trimmed : void 0;
   }
   function loadPlan() {
     var _a, _b;
@@ -297,7 +317,9 @@
         },
         savedExercises,
         bvid: typeof parsed.bvid === "string" ? normalizeBvid(parsed.bvid) : getCurrentBvid(),
-        title: typeof parsed.title === "string" ? parsed.title : void 0,
+        title: optionalText(parsed.title),
+        author: optionalText(parsed.author),
+        notes: optionalText(parsed.notes),
         updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : void 0
       };
     } catch {
@@ -315,6 +337,8 @@
         savedExercises,
         bvid: getCurrentBvid(),
         title: activePlanTitle || document.title || getCurrentStorageId(),
+        author: optionalText(activePlanAuthor),
+        notes: optionalText(activePlanNotes),
         updatedAt: Date.now()
       })
     );
@@ -458,6 +482,8 @@
     const payload = {
       bvid: getCurrentBvid(),
       title: activePlanTitle || document.title || void 0,
+      author: optionalText(activePlanAuthor),
+      notes: optionalText(activePlanNotes),
       rawInput,
       settings,
       savedExercises,
@@ -479,7 +505,9 @@
     const parsed = JSON.parse(text);
     const imported = normalizeImportedPlanData(parsed);
     rawInput = imported.rawInput;
-    activePlanTitle = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : file.name.replace(/\.json$/i, "");
+    activePlanTitle = imported.title ?? file.name.replace(/\.json$/i, "");
+    activePlanAuthor = imported.author ?? "";
+    activePlanNotes = imported.notes ?? "";
     settings = {
       beepDuration: typeof ((_a = parsed.settings) == null ? void 0 : _a.beepDuration) === "number" ? parsed.settings.beepDuration : settings.beepDuration,
       pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : settings.pauseDuringRest
@@ -527,6 +555,8 @@
       }
       rawInput = imported.rawInput;
       activePlanTitle = imported.title ?? document.title;
+      activePlanAuthor = imported.author ?? "";
+      activePlanNotes = imported.notes ?? "";
       exercises = parseResult.exercises;
       selectedStartIndex = 0;
       clearRestTimer();
@@ -596,6 +626,8 @@
         pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : defaultSettings.pauseDuringRest
       };
       activePlanTitle = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : storageKey.replace(/^bili-fitness-timer:/, "");
+      activePlanAuthor = optionalText(parsed.author) ?? "";
+      activePlanNotes = optionalText(parsed.notes) ?? "";
       const parseResult = parsePlan(rawInput);
       exercises = parseResult.errors.length === 0 ? parseResult.exercises : savedExercises;
       selectedStartIndex = 0;
@@ -619,6 +651,8 @@
       rawInput = "";
       exercises = [];
       activePlanTitle = "";
+      activePlanAuthor = "";
+      activePlanNotes = "";
       selectedStartIndex = 0;
       clearRestTimer();
       resetRuntime();
@@ -963,6 +997,20 @@
       font-size: 11px;
       color: rgba(246, 247, 249, 0.58);
     }
+    .bft-field-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 6px;
+    }
+    .bft-field {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .bft-field-label {
+      font-size: 11px;
+      color: rgba(246, 247, 249, 0.58);
+    }
     .bft-control-row .bft-button {
       flex: 1 1 calc(50% - 6px);
     }
@@ -1001,7 +1049,22 @@
       padding: 7px;
       outline: none;
     }
+    .bft-text-input {
+      width: 100%;
+      min-width: 0;
+      min-height: 28px;
+      color: #f6f7f9;
+      background: rgba(0, 0, 0, 0.24);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 6px;
+      padding: 5px 7px;
+      outline: none;
+    }
+    .bft-notes-input {
+      min-height: 58px;
+    }
     .bft-input:focus,
+    .bft-text-input:focus,
     .bft-select:focus {
       border-color: #4cc9a7;
     }
@@ -1071,6 +1134,11 @@
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.05);
     }
+    .bft-manager-item strong,
+    .bft-manager-item .bft-muted {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
     .bft-item {
       display: grid;
       gap: 2px;
@@ -1128,6 +1196,9 @@
       }
       .bft-input {
         min-height: 76px;
+      }
+      .bft-field-grid {
+        grid-template-columns: 1fr;
       }
       .bft-button,
       .bft-select {
@@ -1246,6 +1317,50 @@
     group.append(label, buttonRow);
     return group;
   }
+  function createTextField(labelText, value, onInput, multiline = false) {
+    const label = document.createElement("label");
+    label.className = "bft-field";
+    const caption = document.createElement("span");
+    caption.className = "bft-field-label";
+    caption.textContent = labelText;
+    const field = multiline ? document.createElement("textarea") : document.createElement("input");
+    field.className = multiline ? "bft-text-input bft-notes-input" : "bft-text-input";
+    if (field instanceof HTMLInputElement) {
+      field.type = "text";
+    }
+    field.value = value;
+    field.addEventListener("input", () => {
+      onInput(field.value);
+      savePlan();
+    });
+    label.append(caption, field);
+    return label;
+  }
+  function createPlanInfoForm() {
+    const wrapper = document.createElement("div");
+    wrapper.className = "bft-tool-group";
+    const grid = document.createElement("div");
+    grid.className = "bft-field-grid";
+    grid.append(
+      createTextField("标题", activePlanTitle, (value) => {
+        activePlanTitle = value.trim();
+      }),
+      createTextField("作者", activePlanAuthor, (value) => {
+        activePlanAuthor = value.trim();
+      })
+    );
+    wrapper.append(
+      grid,
+      createTextField("备注", activePlanNotes, (value) => {
+        activePlanNotes = value.trim();
+      }, true)
+    );
+    return wrapper;
+  }
+  function compactText(value, maxLength = 72) {
+    const normalized = value.replace(/\s+/g, " ").trim();
+    return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+  }
   function createManagerList() {
     const wrapper = document.createElement("div");
     wrapper.className = "bft-manager-list";
@@ -1266,12 +1381,23 @@
       meta.className = "bft-muted";
       const updatedText = summary.updatedAt ? new Date(summary.updatedAt).toLocaleString() : "未知时间";
       meta.textContent = `${summary.bvid ?? summary.storageId} · ${summary.actionCount} 个动作 · ${updatedText}`;
+      const extraTexts = [
+        summary.author ? `作者：${compactText(summary.author, 32)}` : "",
+        summary.notes ? `备注：${compactText(summary.notes)}` : ""
+      ].filter(Boolean);
+      const extra = document.createElement("span");
+      extra.className = "bft-muted";
+      extra.textContent = extraTexts.join(" · ");
       const actions = document.createElement("div");
       actions.className = "bft-row";
       const loadButton = createButton("切换", () => loadPlanByStorageKey(summary.storageKey), "bft-primary");
       const deleteButton = createButton("删除", () => deletePlanByStorageKey(summary.storageKey), "bft-danger");
       actions.append(loadButton, deleteButton);
-      item.append(title, meta, actions);
+      item.append(title, meta);
+      if (extraTexts.length > 0) {
+        item.append(extra);
+      }
+      item.append(actions);
       wrapper.append(item);
     });
     return wrapper;
@@ -1513,7 +1639,7 @@
         managerCollapsed = !managerCollapsed;
         savePreferences();
         render();
-      }, [createManagerList()]),
+      }, [createPlanInfoForm(), createManagerList()]),
       createSection(`动作预览 · ${exercises.length}`, previewCollapsed, () => {
         previewCollapsed = !previewCollapsed;
         savePreferences();
@@ -1596,6 +1722,8 @@
           settings = plan.settings;
           exercises = plan.savedExercises;
           activePlanTitle = plan.title ?? document.title;
+          activePlanAuthor = plan.author ?? "";
+          activePlanNotes = plan.notes ?? "";
           selectedStartIndex = 0;
           clearRestTimer();
           resetRuntime();
@@ -1649,6 +1777,8 @@
       previewLocked = preferences.previewLocked;
       panelPosition = preferences.panelPosition;
       activePlanTitle = plan.title ?? document.title;
+      activePlanAuthor = plan.author ?? "";
+      activePlanNotes = plan.notes ?? "";
       selectedStartIndex = 0;
       resetRuntime();
       video = nextVideo;

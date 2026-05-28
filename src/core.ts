@@ -17,6 +17,8 @@ export interface ParseResult {
 export interface ImportedPlanData {
   bvid: string | null
   title: string | null
+  author: string | null
+  notes: string | null
   rawInput: string
   exercises: Exercise[]
 }
@@ -26,6 +28,8 @@ export interface SavedPlanSummary {
   storageId: string
   bvid: string | null
   title: string
+  author: string | null
+  notes: string | null
   actionCount: number
   updatedAt: number | null
 }
@@ -272,6 +276,15 @@ export function normalizeExerciseList(value: unknown): Exercise[] {
     .filter((item): item is Exercise => item !== null)
 }
 
+function normalizeOptionalText(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
 export function normalizeImportedPlanData(value: unknown): ImportedPlanData {
   if (!value || typeof value !== 'object') {
     throw new Error('JSON 必须是对象')
@@ -280,6 +293,8 @@ export function normalizeImportedPlanData(value: unknown): ImportedPlanData {
   const payload = value as {
     bvid?: unknown
     title?: unknown
+    author?: unknown
+    notes?: unknown
     rawInput?: unknown
     exercises?: unknown
     savedExercises?: unknown
@@ -298,10 +313,9 @@ export function normalizeImportedPlanData(value: unknown): ImportedPlanData {
 
   return {
     bvid: typeof payload.bvid === 'string' ? normalizeBvid(payload.bvid) : null,
-    title:
-      typeof payload.title === 'string' && payload.title.trim()
-        ? payload.title.trim()
-        : null,
+    title: normalizeOptionalText(payload.title),
+    author: normalizeOptionalText(payload.author),
+    notes: normalizeOptionalText(payload.notes),
     rawInput,
     exercises: importedExercises,
   }
@@ -312,6 +326,8 @@ export function summarizeStoredPlan(storageKey: string, storedValue: string): Sa
     const parsed = JSON.parse(storedValue) as {
       bvid?: unknown
       title?: unknown
+      author?: unknown
+      notes?: unknown
       rawInput?: unknown
       savedExercises?: unknown
       updatedAt?: unknown
@@ -334,10 +350,7 @@ export function summarizeStoredPlan(storageKey: string, storedValue: string): Sa
       typeof parsed.bvid === 'string'
         ? normalizeBvid(parsed.bvid)
         : normalizeBvid(storageId)
-    const title =
-      typeof parsed.title === 'string' && parsed.title.trim()
-        ? parsed.title.trim()
-        : bvid ?? storageId
+    const title = normalizeOptionalText(parsed.title) ?? bvid ?? storageId
     const updatedAt =
       typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
         ? parsed.updatedAt
@@ -348,6 +361,8 @@ export function summarizeStoredPlan(storageKey: string, storedValue: string): Sa
       storageId,
       bvid,
       title,
+      author: normalizeOptionalText(parsed.author),
+      notes: normalizeOptionalText(parsed.notes),
       actionCount: parsedFromInput.length,
       updatedAt,
     }

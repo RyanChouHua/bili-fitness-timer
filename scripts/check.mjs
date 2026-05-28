@@ -51,6 +51,8 @@ const timestampFile = JSON.parse(await readText('../timestamps/BV1xx411c7mD.json
 const imported = normalizeImportedPlanData(timestampFile)
 assert.equal(imported.bvid, bvid)
 assert.equal(imported.title, 'Example workout timestamps')
+assert.equal(imported.author, 'Bilibili Fitness Timer')
+assert.equal(imported.notes, 'Example local and online workout timestamp plan.')
 assert.equal(imported.exercises.length > 0 || imported.rawInput.length > 0, true)
 assert.deepEqual(parsePlan(imported.rawInput).errors, [])
 
@@ -59,6 +61,8 @@ const summary = summarizeStoredPlan(
   JSON.stringify({
     bvid,
     title: 'Saved sample',
+    author: 'Sample author',
+    notes: 'Sample notes',
     rawInput: 'Push Up 00:12-00:28 3x8-12 rest45',
     savedExercises: parsed.exercises,
     updatedAt: 12345,
@@ -66,6 +70,8 @@ const summary = summarizeStoredPlan(
 )
 assert.equal(summary?.storageId, bvid)
 assert.equal(summary?.title, 'Saved sample')
+assert.equal(summary?.author, 'Sample author')
+assert.equal(summary?.notes, 'Sample notes')
 assert.equal(summary?.actionCount, 1)
 assert.equal(summary?.updatedAt, 12345)
 assert.equal(summarizeStoredPlan(`bili-fitness-timer:${bvid}`, '{bad json'), null)

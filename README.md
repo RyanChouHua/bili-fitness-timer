@@ -28,10 +28,10 @@ https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-
 - “完成本组”是独立大按钮，训练中更适合触控。
 - 休息结束播放 Web Audio 提示音，支持 `1s / 2s / 3s / 5s`。
 - 支持选择从某个动作开始训练。
-- 支持本地 JSON 导入/导出。
+- 支持本地 JSON 导入/导出，保留计划标题、作者和备注。
 - 支持按 BV 号在线导入 GitHub raw 时间戳文件。
-- 计划按当前 BV 号保存到 `localStorage`，包含 `rawInput` 和解析后的动作列表。
-- 支持本地保存数据管理，可切换或删除已保存时间戳。
+- 计划按当前 BV 号保存到 `localStorage`，包含计划信息、`rawInput` 和解析后的动作列表。
+- 支持本地保存数据管理，可编辑计划信息，并切换或删除已保存时间戳。
 - 数据录入区、数据管理区、动作预览区可独立折叠；训练控制区常驻可用。
 - 动作预览支持锁定/解锁，解锁后训练中可直接切换动作。
 - PC 使用紧凑悬浮面板，平板和手机浏览器有响应式布局。
@@ -56,6 +56,8 @@ https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/timestamps
 {
   "bvid": "BV1xx411c7mD",
   "title": "Example workout timestamps",
+  "author": "Bilibili Fitness Timer",
+  "notes": "Example local and online workout timestamp plan.",
   "rawInput": "Push Up 00:12-00:28 3x8-12 rest45",
   "exercises": [
     {
