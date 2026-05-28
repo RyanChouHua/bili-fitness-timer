@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.0
+// @version      0.4.1
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
@@ -224,10 +224,8 @@
   let rawInput = "";
   let settings = { ...defaultSettings };
   let collapsed = false;
-  let inputCollapsed = false;
-  let previewCollapsed = false;
-  let managerCollapsed = false;
   let previewLocked = true;
+  let activeWorkTab = "groups";
   let selectedStartIndex = 0;
   let panelPosition = null;
   let saveStatusText = "已自动保存";
@@ -270,6 +268,9 @@
     }
     const trimmed = value.trim();
     return trimmed ? trimmed : void 0;
+  }
+  function normalizeWorkTab(value) {
+    return value === "groups" || value === "input" || value === "preview" || value === "settings" ? value : "groups";
   }
   function createEmptyGroup(title = "训练分组 1") {
     const now = Date.now();
@@ -446,20 +447,16 @@
       if (!saved) {
         return {
           panelPosition: null,
-          inputCollapsed: false,
-          previewCollapsed: false,
-          managerCollapsed: false,
-          previewLocked: true
+          previewLocked: true,
+          activeTab: "groups"
         };
       }
       const parsed = JSON.parse(saved);
       const position = parsed.panelPosition;
       const nextPreferences = {
         panelPosition: null,
-        inputCollapsed: booleanPreference(parsed.inputCollapsed, false),
-        previewCollapsed: booleanPreference(parsed.previewCollapsed, false),
-        managerCollapsed: booleanPreference(parsed.managerCollapsed, false),
-        previewLocked: booleanPreference(parsed.previewLocked, true)
+        previewLocked: booleanPreference(parsed.previewLocked, true),
+        activeTab: normalizeWorkTab(parsed.activeTab)
       };
       if (position && typeof position.left === "number" && typeof position.top === "number") {
         nextPreferences.panelPosition = {
@@ -471,18 +468,14 @@
     } catch {
       return {
         panelPosition: null,
-        inputCollapsed: false,
-        previewCollapsed: false,
-        managerCollapsed: false,
-        previewLocked: true
+        previewLocked: true,
+        activeTab: "groups"
       };
     }
     return {
       panelPosition: null,
-      inputCollapsed: false,
-      previewCollapsed: false,
-      managerCollapsed: false,
-      previewLocked: true
+      previewLocked: true,
+      activeTab: "groups"
     };
   }
   function savePreferences() {
@@ -490,10 +483,8 @@
       preferencesStorageKey,
       JSON.stringify({
         panelPosition,
-        inputCollapsed,
-        previewCollapsed,
-        managerCollapsed,
-        previewLocked
+        previewLocked,
+        activeTab: activeWorkTab
       })
     );
   }
@@ -975,7 +966,7 @@
       top: 88px;
       z-index: 2147483647;
       width: min(620px, calc(100vw - 28px));
-      max-height: calc(100vh - 104px);
+      height: min(680px, calc(100vh - 104px));
       color: #f6f7f9;
       background: rgba(22, 24, 29, 0.94);
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1014,10 +1005,11 @@
     }
     .bft-body {
       display: grid;
+      grid-template-rows: minmax(0, 1fr);
       gap: 8px;
       padding: 9px;
-      max-height: calc(100vh - 150px);
-      overflow: auto;
+      height: calc(100% - 40px);
+      overflow: hidden;
     }
     .bft-collapsed .bft-body {
       display: none;
@@ -1029,15 +1021,13 @@
     .bft-control-stack {
       display: grid;
       gap: 7px;
-      position: sticky;
-      top: 0;
       z-index: 1;
       padding-bottom: 2px;
-      background: linear-gradient(180deg, rgba(22, 24, 29, 0.98), rgba(22, 24, 29, 0.9));
     }
     .bft-main-grid {
       display: grid;
       gap: 8px;
+      min-height: 0;
     }
     .bft-main-left,
     .bft-main-right {
@@ -1045,6 +1035,11 @@
       gap: 8px;
       align-content: start;
       min-width: 0;
+      min-height: 0;
+    }
+    .bft-main-right {
+      grid-template-rows: auto minmax(0, 1fr);
+      align-content: stretch;
     }
     .bft-status {
       display: grid;
@@ -1053,32 +1048,30 @@
       background: rgba(255, 255, 255, 0.07);
       border-radius: 6px;
     }
-    .bft-section {
+    .bft-tabs {
       display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 4px;
+    }
+    .bft-tab {
+      min-width: 0;
+      min-height: 30px;
+      white-space: nowrap;
       overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.035);
+      text-overflow: ellipsis;
     }
-    .bft-section-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 6px 7px;
-      background: rgba(255, 255, 255, 0.055);
+    .bft-tab-active {
+      color: #07120f;
+      background: #4cc9a7;
+      border-color: #4cc9a7;
+      font-weight: 700;
     }
-    .bft-section-actions {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 5px;
-      flex-wrap: wrap;
-    }
-    .bft-section-body {
+    .bft-work-panel {
       display: grid;
       gap: 7px;
-      padding: 7px;
+      min-height: 0;
+      overflow: auto;
+      padding-right: 2px;
     }
     .bft-tool-group {
       display: grid;
@@ -1214,8 +1207,6 @@
     .bft-manager-list {
       display: grid;
       gap: 6px;
-      max-height: 220px;
-      overflow: auto;
     }
     .bft-manager-item {
       display: grid;
@@ -1277,7 +1268,7 @@
         top: auto;
         bottom: max(0px, env(safe-area-inset-bottom));
         width: auto;
-        max-height: min(72dvh, 540px);
+        height: min(76dvh, 560px);
         border-radius: 8px 8px 0 0;
       }
       .bft-header {
@@ -1287,7 +1278,7 @@
       .bft-body {
         gap: 7px;
         padding: 8px;
-        max-height: calc(min(72dvh, 540px) - 42px);
+        height: calc(100% - 42px);
       }
       .bft-input {
         min-height: 76px;
@@ -1331,10 +1322,10 @@
         right: 12px;
         top: 72px;
         width: min(680px, calc(100vw - 24px));
-        max-height: calc(100vh - 90px);
+        height: min(700px, calc(100vh - 90px));
       }
       .bft-body {
-        max-height: calc(100vh - 130px);
+        height: calc(100% - 40px);
       }
       .bft-button,
       .bft-select {
@@ -1361,6 +1352,26 @@
     button.addEventListener("click", onClick);
     return button;
   }
+  function createTabBar() {
+    const tabs = document.createElement("div");
+    tabs.className = "bft-tabs";
+    const items = [
+      { id: "groups", label: "分组" },
+      { id: "input", label: "录入" },
+      { id: "preview", label: "预览" },
+      { id: "settings", label: "设置" }
+    ];
+    items.forEach((item) => {
+      const button = createButton(item.label, () => {
+        activeWorkTab = item.id;
+        savePreferences();
+        render();
+      }, `bft-tab ${activeWorkTab === item.id ? "bft-tab-active" : ""}`);
+      button.setAttribute("aria-pressed", String(activeWorkTab === item.id));
+      tabs.append(button);
+    });
+    return tabs;
+  }
   function getStatusText() {
     const exercise = getCurrentExercise();
     if (runtime.mode === "complete") {
@@ -1379,26 +1390,6 @@
       return `动作中：第 ${runtime.setIndex + 1}/${exercise.sets} 组`;
     }
     return "准备开始";
-  }
-  function createSection(titleText, isCollapsed, onToggle, children, actions = []) {
-    const section = document.createElement("section");
-    section.className = `bft-section ${isCollapsed ? "bft-section-collapsed" : ""}`.trim();
-    const header = document.createElement("div");
-    header.className = "bft-section-head";
-    const title = document.createElement("strong");
-    title.textContent = titleText;
-    const actionRow = document.createElement("div");
-    actionRow.className = "bft-section-actions";
-    actionRow.append(...actions, createButton(isCollapsed ? "展开" : "折叠", onToggle));
-    header.append(title, actionRow);
-    section.append(header);
-    if (!isCollapsed) {
-      const body = document.createElement("div");
-      body.className = "bft-section-body";
-      body.append(...children);
-      section.append(body);
-    }
-    return section;
   }
   function createToolGroup(labelText, buttons) {
     const group = document.createElement("div");
@@ -1539,6 +1530,76 @@
     wrapper.append(label, pickerRow, actions);
     return wrapper;
   }
+  function createSettingsPanel() {
+    const panel = document.createElement("div");
+    panel.className = "bft-work-panel";
+    const settingsRow = document.createElement("div");
+    settingsRow.className = "bft-row";
+    const beepLabel = document.createElement("label");
+    beepLabel.className = "bft-row";
+    const beepText = document.createElement("span");
+    beepText.textContent = "提示音";
+    const beepSelect = document.createElement("select");
+    beepSelect.className = "bft-select";
+    [1, 2, 3, 5].forEach((value) => {
+      const option = document.createElement("option");
+      option.value = String(value);
+      option.textContent = `${value}s`;
+      option.selected = settings.beepDuration === value;
+      beepSelect.append(option);
+    });
+    beepSelect.addEventListener("change", () => {
+      settings.beepDuration = Number(beepSelect.value);
+      savePlan();
+    });
+    beepLabel.append(beepText, beepSelect);
+    const pauseLabel = document.createElement("label");
+    pauseLabel.className = "bft-check";
+    const pauseInput = document.createElement("input");
+    pauseInput.type = "checkbox";
+    pauseInput.checked = settings.pauseDuringRest;
+    pauseInput.addEventListener("change", () => {
+      settings.pauseDuringRest = pauseInput.checked;
+      savePlan();
+    });
+    pauseLabel.append(pauseInput, document.createTextNode("休息暂停视频"));
+    settingsRow.append(beepLabel, pauseLabel);
+    panel.append(settingsRow);
+    return panel;
+  }
+  function createWorkPanel(parseResult, inputChildren, list) {
+    const panel = document.createElement("div");
+    panel.className = "bft-work-panel";
+    if (activeWorkTab === "groups") {
+      panel.append(createGroupActions(), createPlanInfoForm(), createManagerList());
+      return panel;
+    }
+    if (activeWorkTab === "input") {
+      panel.append(...inputChildren);
+      return panel;
+    }
+    if (activeWorkTab === "preview") {
+      const lockRow = document.createElement("div");
+      lockRow.className = "bft-row";
+      lockRow.append(
+        createButton(previewLocked ? "解锁预览" : "锁定预览", () => {
+          previewLocked = !previewLocked;
+          savePreferences();
+          render();
+        })
+      );
+      panel.append(lockRow, list);
+      return panel;
+    }
+    panel.append(createSettingsPanel());
+    if (parseResult.errors.length > 0) {
+      const warning = document.createElement("div");
+      warning.className = "bft-error";
+      warning.textContent = "录入内容有错误，请在“录入”页处理。";
+      panel.append(warning);
+    }
+    return panel;
+  }
   function render(options = {}) {
     let panel = document.getElementById(panelId);
     if (!panel) {
@@ -1598,6 +1659,7 @@
       const selectionStart = textarea.selectionStart;
       const selectionEnd = textarea.selectionEnd;
       rawInput = textarea.value;
+      activeWorkTab = "input";
       runtime.mode = runtime.mode === "complete" ? "idle" : runtime.mode;
       savePlan();
       render({
@@ -1632,37 +1694,6 @@
       onlineImportButton,
       saveButton
     ]);
-    const settingsRow = document.createElement("div");
-    settingsRow.className = "bft-row";
-    const beepLabel = document.createElement("label");
-    beepLabel.className = "bft-row";
-    const beepText = document.createElement("span");
-    beepText.textContent = "提示音";
-    const beepSelect = document.createElement("select");
-    beepSelect.className = "bft-select";
-    [1, 2, 3, 5].forEach((value) => {
-      const option = document.createElement("option");
-      option.value = String(value);
-      option.textContent = `${value}s`;
-      option.selected = settings.beepDuration === value;
-      beepSelect.append(option);
-    });
-    beepSelect.addEventListener("change", () => {
-      settings.beepDuration = Number(beepSelect.value);
-      savePlan();
-    });
-    beepLabel.append(beepText, beepSelect);
-    const pauseLabel = document.createElement("label");
-    pauseLabel.className = "bft-check";
-    const pauseInput = document.createElement("input");
-    pauseInput.type = "checkbox";
-    pauseInput.checked = settings.pauseDuringRest;
-    pauseInput.addEventListener("change", () => {
-      settings.pauseDuringRest = pauseInput.checked;
-      savePlan();
-    });
-    pauseLabel.append(pauseInput, document.createTextNode("休息暂停视频"));
-    settingsRow.append(beepLabel, pauseLabel);
     const startPickerRow = document.createElement("div");
     startPickerRow.className = "bft-row";
     const startPickerLabel = document.createElement("label");
@@ -1747,7 +1778,7 @@
       empty.textContent = "暂无有效动作";
       list.append(empty);
     }
-    controlStack.append(status, settingsRow, startPickerRow, controls, completeRow);
+    controlStack.append(status, startPickerRow, controls, completeRow);
     const inputChildren = [textarea, insertGroup, templateGroup, fileGroup];
     if (parseResult.errors.length > 0) {
       const errorBox = document.createElement("div");
@@ -1766,34 +1797,12 @@
     const mainRight = document.createElement("div");
     mainRight.className = "bft-main-right";
     mainLeft.append(controlStack);
-    mainRight.append(
-      createSection("数据录入", inputCollapsed, () => {
-        inputCollapsed = !inputCollapsed;
-        savePreferences();
-        render();
-      }, inputChildren),
-      createSection("数据管理", managerCollapsed, () => {
-        managerCollapsed = !managerCollapsed;
-        savePreferences();
-        render();
-      }, [createGroupActions(), createPlanInfoForm(), createManagerList()]),
-      createSection(`动作预览 · ${exercises.length}`, previewCollapsed, () => {
-        previewCollapsed = !previewCollapsed;
-        savePreferences();
-        render();
-      }, [list], [
-        createButton(previewLocked ? "解锁" : "锁定", () => {
-          previewLocked = !previewLocked;
-          savePreferences();
-          render();
-        })
-      ])
-    );
+    mainRight.append(createTabBar(), createWorkPanel(parseResult, inputChildren, list));
     mainGrid.append(mainLeft, mainRight);
     body.append(mainGrid);
     panel.append(header, body);
     applyPanelPosition(panel);
-    if (options.restoreTextarea && !inputCollapsed) {
+    if (options.restoreTextarea && activeWorkTab === "input") {
       textarea.focus();
       textarea.setSelectionRange(
         options.restoreTextarea.selectionStart,
@@ -1900,10 +1909,8 @@
       const plan = loadPlan();
       const preferences = loadPreferences();
       applyPlanGroup(plan, planGroups);
-      inputCollapsed = preferences.inputCollapsed;
-      previewCollapsed = preferences.previewCollapsed;
-      managerCollapsed = preferences.managerCollapsed;
       previewLocked = preferences.previewLocked;
+      activeWorkTab = preferences.activeTab;
       panelPosition = preferences.panelPosition;
       video = nextVideo;
       injectStyle();
