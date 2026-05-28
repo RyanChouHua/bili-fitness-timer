@@ -3,6 +3,30 @@ dist/*
 !dist/
 !dist/bili-fitness-timer.user.js
 .vite/
+
+# Local editor and workspace files
+.vscode/
+.idea/
+*.code-workspace
+
+# Local notes and agent-only drafts
+AGENTS.md
+AGENTS.local.md
+CLAUDE.md
+*.draft.md
+*.tmp.md
+*.bak
+*.orig
+
+# Local requirement drafts, not release assets
+修改要求*.md
+需求确认*.md
+
+# Runtime/cache files
+.cache/
+.tmp/
+tmp/
+temp/
 *.log
 *.local
 .DS_Store
