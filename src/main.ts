@@ -1,15 +1,15 @@
-type Mode = 'idle' | 'exercise' | 'rest' | 'paused' | 'complete'
+import {
+  type Exercise,
+  extractBvidFromUrl,
+  formatTimestamp,
+  getTimestampLibraryUrl,
+  normalizeExerciseList,
+  normalizeImportedPlanData,
+  parsePlan,
+  serializeExercises,
+} from './core'
 
-interface Exercise {
-  id: string
-  name: string
-  start: number
-  end: number
-  sets: number
-  minReps: number
-  maxReps: number
-  restSeconds: number
-}
+type Mode = 'idle' | 'exercise' | 'rest' | 'paused' | 'complete'
 
 interface Settings {
   beepDuration: number
@@ -37,11 +37,8 @@ interface PanelPosition {
 
 interface Preferences {
   panelPosition: PanelPosition | null
-}
-
-interface ParseResult {
-  exercises: Exercise[]
-  errors: string[]
+  inputCollapsed: boolean
+  previewCollapsed: boolean
 }
 
 const panelId = 'bili-fitness-timer-panel'
@@ -51,16 +48,18 @@ const defaultSettings: Settings = {
   beepDuration: 2,
   pauseDuringRest: true,
 }
-const timestampPattern =
-  String.raw`(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d+)?|(?:(?:\d+\s*时)?(?:\d+\s*分)?\d+(?:\.\d+)?\s*秒|(?:\d+\s*时)?\d+\s*分(?:\s*\d+(?:\.\d+)?\s*秒)?)`
 
 let video: HTMLVideoElement | null = null
 let exercises: Exercise[] = []
 let rawInput = ''
 let settings: Settings = { ...defaultSettings }
 let collapsed = false
+let inputCollapsed = false
+let previewCollapsed = false
 let selectedStartIndex = 0
 let panelPosition: PanelPosition | null = null
+let saveStatusText = '已自动保存'
+let onlineImportBusy = false
 let runtime: Runtime = {
   mode: 'idle',
   exerciseIndex: 0,
@@ -70,7 +69,12 @@ let runtime: Runtime = {
 }
 
 let restTimerId: number | undefined
+let navigationWatcherId: number | undefined
+let viewportWatcherReady = false
 let activeStorageKey = ''
+let initInProgress = false
+let navigationReloadInProgress = false
+const guardedVideos = new WeakSet<HTMLVideoElement>()
 
 interface RenderOptions {
   restoreTextarea?: {
@@ -79,8 +83,12 @@ interface RenderOptions {
   }
 }
 
+function getCurrentBvid(): string | null {
+  return extractBvidFromUrl(location.href)
+}
+
 function getStorageKey(): string {
-  const bvid = location.pathname.match(/\/video\/(BV[\w]+)/)?.[1]
+  const bvid = getCurrentBvid()
   return `bili-fitness-timer:${bvid ?? location.pathname}`
 }
 
@@ -97,9 +105,7 @@ function loadPlan(): StoredPlan {
       return fallback
     }
     const parsed = JSON.parse(saved) as Partial<StoredPlan>
-    const savedExercises = Array.isArray(parsed.savedExercises)
-      ? parsed.savedExercises.filter(isStoredExercise)
-      : []
+    const savedExercises = normalizeExerciseList(parsed.savedExercises)
     return {
       rawInput:
         typeof parsed.rawInput === 'string'
@@ -122,70 +128,52 @@ function loadPlan(): StoredPlan {
   }
 }
 
-function savePlan(): void {
+function savePlan(statusText = '已自动保存'): void {
   const parseResult = parsePlan(rawInput)
+  const savedExercises = parseResult.errors.length === 0 ? parseResult.exercises : exercises
   localStorage.setItem(
     getStorageKey(),
     JSON.stringify({
       rawInput,
       settings,
-      savedExercises: parseResult.errors.length === 0 ? parseResult.exercises : exercises,
+      savedExercises,
     } satisfies StoredPlan),
   )
-}
-
-function isStoredExercise(value: unknown): value is Exercise {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-  const exercise = value as Partial<Exercise>
-  return (
-    typeof exercise.id === 'string' &&
-    typeof exercise.name === 'string' &&
-    typeof exercise.start === 'number' &&
-    typeof exercise.end === 'number' &&
-    typeof exercise.sets === 'number' &&
-    typeof exercise.minReps === 'number' &&
-    typeof exercise.maxReps === 'number' &&
-    typeof exercise.restSeconds === 'number'
-  )
-}
-
-function serializeExercises(items: Exercise[]): string {
-  return items
-    .map(
-      exercise =>
-        `${exercise.name} ${formatTimestamp(exercise.start)}-${formatTimestamp(exercise.end)} ${exercise.sets}x${exercise.minReps}${exercise.maxReps === exercise.minReps ? '' : `-${exercise.maxReps}`} rest${exercise.restSeconds}`,
-    )
-    .join('\n')
+  saveStatusText =
+    parseResult.errors.length === 0 ? statusText : '输入有错误，已保留上次有效动作'
 }
 
 function loadPreferences(): Preferences {
   try {
     const saved = localStorage.getItem(preferencesStorageKey)
     if (!saved) {
-      return { panelPosition: null }
+      return { panelPosition: null, inputCollapsed: false, previewCollapsed: false }
     }
 
     const parsed = JSON.parse(saved) as Partial<Preferences>
     const position = parsed.panelPosition
+    const nextPreferences: Preferences = {
+      panelPosition: null,
+      inputCollapsed: parsed.inputCollapsed === true,
+      previewCollapsed: parsed.previewCollapsed === true,
+    }
     if (
       position &&
       typeof position.left === 'number' &&
       typeof position.top === 'number'
     ) {
-      return {
-        panelPosition: {
-          left: position.left,
-          top: position.top,
-        },
+      nextPreferences.panelPosition = {
+        left: position.left,
+        top: position.top,
       }
     }
+
+    return nextPreferences
   } catch {
-    return { panelPosition: null }
+    return { panelPosition: null, inputCollapsed: false, previewCollapsed: false }
   }
 
-  return { panelPosition: null }
+  return { panelPosition: null, inputCollapsed: false, previewCollapsed: false }
 }
 
 function savePreferences(): void {
@@ -193,6 +181,8 @@ function savePreferences(): void {
     preferencesStorageKey,
     JSON.stringify({
       panelPosition,
+      inputCollapsed,
+      previewCollapsed,
     } satisfies Preferences),
   )
 }
@@ -284,10 +274,13 @@ function setupPanelDrag(header: HTMLElement, panel: HTMLElement): void {
 
 function exportPlan(): void {
   const parseResult = parsePlan(rawInput)
-  const payload: StoredPlan = {
+  const savedExercises = parseResult.errors.length === 0 ? parseResult.exercises : exercises
+  const payload = {
+    bvid: getCurrentBvid(),
     rawInput,
     settings,
-    savedExercises: parseResult.errors.length === 0 ? parseResult.exercises : exercises,
+    savedExercises,
+    exercises: savedExercises,
   }
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: 'application/json;charset=utf-8',
@@ -302,15 +295,9 @@ function exportPlan(): void {
 async function importPlanFromFile(file: File): Promise<void> {
   const text = await file.text()
   const parsed = JSON.parse(text) as Partial<StoredPlan>
-  const savedExercises = Array.isArray(parsed.savedExercises)
-    ? parsed.savedExercises.filter(isStoredExercise)
-    : []
-  if (typeof parsed.rawInput !== 'string' && savedExercises.length === 0) {
-    throw new Error('Invalid plan file')
-  }
+  const imported = normalizeImportedPlanData(parsed)
 
-  rawInput =
-    typeof parsed.rawInput === 'string' ? parsed.rawInput : serializeExercises(savedExercises)
+  rawInput = imported.rawInput
   settings = {
     beepDuration:
       typeof parsed.settings?.beepDuration === 'number'
@@ -329,8 +316,63 @@ async function importPlanFromFile(file: File): Promise<void> {
     restRemaining: 0,
     beforePauseMode: 'idle',
   }
-  savePlan()
+  const parseResult = parsePlan(rawInput)
+  exercises = parseResult.errors.length === 0 ? parseResult.exercises : imported.exercises
+  savePlan('已导入本地 JSON')
   render()
+}
+
+async function importPlanFromOnline(): Promise<void> {
+  const bvid = getCurrentBvid()
+  if (!bvid) {
+    saveStatusText = '未识别到当前视频 BV 号'
+    render()
+    return
+  }
+
+  onlineImportBusy = true
+  saveStatusText = `正在在线导入 ${bvid}`
+  render()
+
+  try {
+    const response = await fetch(getTimestampLibraryUrl(bvid), {
+      cache: 'no-store',
+    })
+    if (response.status === 404) {
+      throw new Error('未找到该视频的在线时间戳')
+    }
+    if (!response.ok) {
+      throw new Error(`在线导入失败：HTTP ${response.status}`)
+    }
+
+    const imported = normalizeImportedPlanData(await response.json())
+    if (imported.bvid && imported.bvid !== bvid) {
+      throw new Error(`在线文件 BV 号不匹配：${imported.bvid}`)
+    }
+
+    const parseResult = parsePlan(imported.rawInput)
+    if (parseResult.errors.length > 0) {
+      throw new Error(`在线时间戳格式错误：${parseResult.errors[0]}`)
+    }
+
+    rawInput = imported.rawInput
+    exercises = parseResult.exercises
+    selectedStartIndex = 0
+    clearRestTimer()
+    runtime = {
+      mode: 'idle',
+      exerciseIndex: 0,
+      setIndex: 0,
+      restRemaining: 0,
+      beforePauseMode: 'idle',
+    }
+    savePlan(`已在线导入 ${bvid}`)
+  } catch (error) {
+    saveStatusText = error instanceof Error ? error.message : '在线导入失败'
+  } finally {
+    onlineImportBusy = false
+    render()
+  }
 }
 
 function openImportPicker(): void {
@@ -347,110 +389,6 @@ function openImportPicker(): void {
     })
   })
   input.click()
-}
-
-function parseTimestamp(value: string): number | null {
-  const text = value.trim()
-  const chinese = text.match(/^(?:(\d+)\s*时)?(?:(\d+)\s*分)?(?:(\d+(?:\.\d+)?)\s*秒?)$/)
-  if (chinese && (chinese[1] || chinese[2] || chinese[3])) {
-    return (
-      Number(chinese[1] ?? 0) * 3600 +
-      Number(chinese[2] ?? 0) * 60 +
-      Number(chinese[3] ?? 0)
-    )
-  }
-
-  const parts = text.split(':')
-  if (parts.length < 2 || parts.length > 3) {
-    return null
-  }
-  if (parts.some(part => part.trim() === '' || Number.isNaN(Number(part)))) {
-    return null
-  }
-
-  const numbers = parts.map(Number)
-  if (numbers.length === 2) {
-    return numbers[0] * 60 + numbers[1]
-  }
-  return numbers[0] * 3600 + numbers[1] * 60 + numbers[2]
-}
-
-function formatTimestamp(seconds: number): string {
-  const safeSeconds = Math.max(0, Math.floor(seconds))
-  const h = Math.floor(safeSeconds / 3600)
-  const m = Math.floor((safeSeconds % 3600) / 60)
-  const s = safeSeconds % 60
-  if (h > 0) {
-    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  }
-  return `${m}:${String(s).padStart(2, '0')}`
-}
-
-function parsePlan(input: string): ParseResult {
-  const errors: string[] = []
-  const parsedExercises: Exercise[] = []
-  const lines = input.split(/\r?\n/)
-
-  lines.forEach((rawLine, index) => {
-    const line = rawLine.trim()
-    if (!line) {
-      return
-    }
-
-    const timeMatch = line.match(
-      new RegExp(`(?<start>${timestampPattern})\\s*(?:-|~|至|到)\\s*(?<end>${timestampPattern})`),
-    )
-    const setMatch = line.match(/(?<sets>\d+)\s*(?:x|X|×|组)\s*(?<min>\d+)(?:\s*[-~]\s*(?<max>\d+))?/)
-    const restMatch = line.match(/(?:rest|休息)\s*(?<rest>\d+)/i)
-
-    if (!timeMatch?.groups) {
-      errors.push(`第 ${index + 1} 行：缺少时间段，例如 00:12-00:28`)
-      return
-    }
-    if (!setMatch?.groups) {
-      errors.push(`第 ${index + 1} 行：缺少组数和次数，例如 3x8-12`)
-      return
-    }
-
-    const start = parseTimestamp(timeMatch.groups.start)
-    const end = parseTimestamp(timeMatch.groups.end)
-    if (start === null || end === null) {
-      errors.push(`第 ${index + 1} 行：时间戳格式无法识别`)
-      return
-    }
-    if (end <= start) {
-      errors.push(`第 ${index + 1} 行：结束时间必须晚于开始时间`)
-      return
-    }
-
-    const beforeTime = line.slice(0, timeMatch.index).trim()
-    const name = beforeTime || `动作 ${parsedExercises.length + 1}`
-    const sets = Number(setMatch.groups.sets)
-    const minReps = Number(setMatch.groups.min)
-    const maxReps = Number(setMatch.groups.max ?? setMatch.groups.min)
-    const restSeconds = restMatch?.groups ? Number(restMatch.groups.rest) : 45
-
-    if (sets <= 0 || minReps <= 0 || maxReps < minReps || restSeconds < 0) {
-      errors.push(`第 ${index + 1} 行：组数、次数或休息时间无效`)
-      return
-    }
-
-    parsedExercises.push({
-      id: `${index}-${start}-${end}`,
-      name,
-      start,
-      end,
-      sets,
-      minReps,
-      maxReps,
-      restSeconds,
-    })
-  })
-
-  return {
-    exercises: parsedExercises,
-    errors,
-  }
 }
 
 function getCurrentExercise(): Exercise | null {
@@ -612,25 +550,30 @@ async function beep(durationSeconds: number): Promise<void> {
   await context.close()
 }
 
-function setLoopGuard(): void {
-  video?.addEventListener('timeupdate', () => {
-    if (!video || runtime.mode !== 'exercise') {
+function setLoopGuard(targetVideo: HTMLVideoElement | null = video): void {
+  if (!targetVideo || guardedVideos.has(targetVideo)) {
+    return
+  }
+
+  guardedVideos.add(targetVideo)
+  targetVideo.addEventListener('timeupdate', () => {
+    if (video !== targetVideo || runtime.mode !== 'exercise') {
       return
     }
     const exercise = getCurrentExercise()
     if (!exercise) {
       return
     }
-    if (video.currentTime >= exercise.end || video.currentTime < exercise.start - 0.25) {
-      video.currentTime = exercise.start
-      if (video.paused) {
-        void video.play()
+    if (targetVideo.currentTime >= exercise.end || targetVideo.currentTime < exercise.start - 0.25) {
+      targetVideo.currentTime = exercise.start
+      if (targetVideo.paused) {
+        void targetVideo.play()
       }
     }
   })
 }
 
-function waitForVideo(): Promise<HTMLVideoElement> {
+function waitForVideo(timeoutMs = 10000): Promise<HTMLVideoElement | null> {
   const existing = document.querySelector<HTMLVideoElement>('video')
   if (existing) {
     return Promise.resolve(existing)
@@ -648,6 +591,10 @@ function waitForVideo(): Promise<HTMLVideoElement> {
       childList: true,
       subtree: true,
     })
+    window.setTimeout(() => {
+      observer.disconnect()
+      resolve(null)
+    }, timeoutMs)
   })
 }
 
@@ -664,7 +611,7 @@ function injectStyle(): void {
       right: 14px;
       top: 88px;
       z-index: 2147483647;
-      width: min(328px, calc(100vw - 28px));
+      width: min(340px, calc(100vw - 28px));
       max-height: calc(100vh - 104px);
       color: #f6f7f9;
       background: rgba(22, 24, 29, 0.94);
@@ -704,7 +651,7 @@ function injectStyle(): void {
     }
     .bft-body {
       display: grid;
-      gap: 7px;
+      gap: 8px;
       padding: 9px;
       max-height: calc(100vh - 150px);
       overflow: auto;
@@ -714,7 +661,16 @@ function injectStyle(): void {
     }
     .bft-collapsed {
       width: auto;
-      min-width: 118px;
+      min-width: 96px;
+    }
+    .bft-control-stack {
+      display: grid;
+      gap: 7px;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      padding-bottom: 2px;
+      background: linear-gradient(180deg, rgba(22, 24, 29, 0.98), rgba(22, 24, 29, 0.9));
     }
     .bft-status {
       display: grid;
@@ -722,6 +678,34 @@ function injectStyle(): void {
       padding: 7px;
       background: rgba(255, 255, 255, 0.07);
       border-radius: 6px;
+    }
+    .bft-section {
+      display: grid;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+    .bft-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 7px;
+      background: rgba(255, 255, 255, 0.055);
+    }
+    .bft-section-body {
+      display: grid;
+      gap: 7px;
+      padding: 7px;
+    }
+    .bft-tool-group {
+      display: grid;
+      gap: 4px;
+    }
+    .bft-tool-label {
+      font-size: 11px;
+      color: rgba(246, 247, 249, 0.58);
     }
     .bft-muted {
       color: rgba(246, 247, 249, 0.68);
@@ -827,6 +811,12 @@ function injectStyle(): void {
     .bft-item-selected {
       border-color: rgba(255, 213, 97, 0.78);
     }
+    .bft-empty {
+      padding: 7px;
+      color: rgba(246, 247, 249, 0.64);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+    }
     .bft-error {
       display: grid;
       gap: 3px;
@@ -870,6 +860,9 @@ function injectStyle(): void {
       .bft-control-row .bft-button {
         flex-basis: calc(50% - 6px);
       }
+      .bft-tool-group .bft-button {
+        flex: 1 1 calc(50% - 6px);
+      }
       .bft-status {
         padding: 7px;
       }
@@ -880,8 +873,26 @@ function injectStyle(): void {
         left: auto;
         right: 8px;
         width: auto;
-        min-width: 104px;
+        min-width: 88px;
         border-radius: 8px;
+      }
+    }
+    @media (min-width: 721px) and (max-width: 1024px) {
+      #${panelId} {
+        right: 12px;
+        top: 72px;
+        width: min(360px, calc(100vw - 24px));
+        max-height: calc(100vh - 90px);
+      }
+      .bft-body {
+        max-height: calc(100vh - 130px);
+      }
+      .bft-button,
+      .bft-select {
+        min-height: 32px;
+      }
+      .bft-tool-group .bft-button {
+        flex: 1 1 calc(50% - 6px);
       }
     }
   `
@@ -917,6 +928,45 @@ function getStatusText(): string {
   return '准备开始'
 }
 
+function createSection(
+  titleText: string,
+  isCollapsed: boolean,
+  onToggle: () => void,
+  children: Node[],
+): HTMLElement {
+  const section = document.createElement('section')
+  section.className = `bft-section ${isCollapsed ? 'bft-section-collapsed' : ''}`.trim()
+
+  const header = document.createElement('div')
+  header.className = 'bft-section-head'
+  const title = document.createElement('strong')
+  title.textContent = titleText
+  header.append(title, createButton(isCollapsed ? '展开' : '折叠', onToggle))
+  section.append(header)
+
+  if (!isCollapsed) {
+    const body = document.createElement('div')
+    body.className = 'bft-section-body'
+    body.append(...children)
+    section.append(body)
+  }
+
+  return section
+}
+
+function createToolGroup(labelText: string, buttons: HTMLButtonElement[]): HTMLElement {
+  const group = document.createElement('div')
+  group.className = 'bft-tool-group'
+  const label = document.createElement('span')
+  label.className = 'bft-tool-label'
+  label.textContent = labelText
+  const buttonRow = document.createElement('div')
+  buttonRow.className = 'bft-row'
+  buttonRow.append(...buttons)
+  group.append(label, buttonRow)
+  return group
+}
+
 function render(options: RenderOptions = {}): void {
   let panel = document.getElementById(panelId)
   if (!panel) {
@@ -928,7 +978,9 @@ function render(options: RenderOptions = {}): void {
   applyPanelPosition(panel)
 
   const parseResult = parsePlan(rawInput)
-  exercises = parseResult.exercises
+  if (parseResult.errors.length === 0) {
+    exercises = parseResult.exercises
+  }
   if (selectedStartIndex >= exercises.length) {
     selectedStartIndex = Math.max(0, exercises.length - 1)
   }
@@ -957,6 +1009,9 @@ function render(options: RenderOptions = {}): void {
   const body = document.createElement('div')
   body.className = 'bft-body'
 
+  const controlStack = document.createElement('div')
+  controlStack.className = 'bft-control-stack'
+
   const status = document.createElement('div')
   status.className = 'bft-status'
   const current = getCurrentExercise()
@@ -967,7 +1022,10 @@ function render(options: RenderOptions = {}): void {
   statusDetail.textContent = current
     ? `${current.name} · ${formatTimestamp(current.start)}-${formatTimestamp(current.end)} · ${current.minReps}${current.maxReps === current.minReps ? '' : `-${current.maxReps}`} 次`
     : `${exercises.length} 个动作`
-  status.append(statusTitle, statusDetail)
+  const saveStatus = document.createElement('span')
+  saveStatus.className = 'bft-muted'
+  saveStatus.textContent = saveStatusText
+  status.append(statusTitle, statusDetail, saveStatus)
 
   const textarea = document.createElement('textarea')
   textarea.className = 'bft-input'
@@ -987,20 +1045,32 @@ function render(options: RenderOptions = {}): void {
     })
   })
 
-  const timeButtons = document.createElement('div')
-  timeButtons.className = 'bft-row bft-tool-row'
-  timeButtons.append(
+  const onlineImportButton = createButton('在线导入', () => {
+    void importPlanFromOnline()
+  })
+  onlineImportButton.disabled = onlineImportBusy
+  const saveButton = createButton('保存', () => {
+    savePlan('已手动保存')
+    render()
+  }, 'bft-primary')
+  const insertGroup = createToolGroup('时间', [
     createButton('插入开始', () => insertCurrentTime('start')),
     createButton('插入结束', () => insertCurrentTime('end')),
+  ])
+  const templateGroup = createToolGroup('模板', [
     createButton('示例', () => {
       rawInput =
         '俯卧撑 00:12-00:28 3x8-12 rest45\n深蹲 01:05-01:22 4x10 rest60'
       savePlan()
       render()
     }),
+  ])
+  const fileGroup = createToolGroup('数据', [
     createButton('导出', exportPlan),
     createButton('导入', openImportPicker),
-  )
+    onlineImportButton,
+    saveButton,
+  ])
 
   const settingsRow = document.createElement('div')
   settingsRow.className = 'bft-row'
@@ -1043,7 +1113,7 @@ function render(options: RenderOptions = {}): void {
   startPickerText.textContent = '从动作'
   const startPicker = document.createElement('select')
   startPicker.className = 'bft-select bft-grow'
-  startPicker.disabled = exercises.length === 0 || runtime.mode !== 'idle'
+  startPicker.disabled = exercises.length === 0 || (runtime.mode !== 'idle' && runtime.mode !== 'complete')
   exercises.forEach((exercise, index) => {
     const option = document.createElement('option')
     option.value = String(index)
@@ -1122,7 +1192,17 @@ function render(options: RenderOptions = {}): void {
     list.append(itemWrapper)
   })
 
-  body.append(status, textarea, timeButtons, settingsRow, startPickerRow, controls)
+  if (exercises.length === 0) {
+    const empty = document.createElement('li')
+    empty.className = 'bft-empty'
+    empty.textContent = '暂无有效动作'
+    list.append(empty)
+  }
+
+  controlStack.append(status, settingsRow, startPickerRow, controls)
+  body.append(controlStack)
+
+  const inputChildren: Node[] = [textarea, insertGroup, templateGroup, fileGroup]
 
   if (parseResult.errors.length > 0) {
     const errorBox = document.createElement('div')
@@ -1132,14 +1212,25 @@ function render(options: RenderOptions = {}): void {
       line.textContent = error
       errorBox.append(line)
     })
-    body.append(errorBox)
+    inputChildren.push(errorBox)
   }
 
-  body.append(list)
+  body.append(
+    createSection('数据录入', inputCollapsed, () => {
+      inputCollapsed = !inputCollapsed
+      savePreferences()
+      render()
+    }, inputChildren),
+    createSection(`动作预览 · ${exercises.length}`, previewCollapsed, () => {
+      previewCollapsed = !previewCollapsed
+      savePreferences()
+      render()
+    }, [list]),
+  )
   panel.append(header, body)
   applyPanelPosition(panel)
 
-  if (options.restoreTextarea) {
+  if (options.restoreTextarea && !inputCollapsed) {
     textarea.focus()
     textarea.setSelectionRange(
       options.restoreTextarea.selectionStart,
@@ -1156,30 +1247,79 @@ function insertCurrentTime(kind: 'start' | 'end'): void {
   render()
 }
 
+function resetRuntime(): void {
+  runtime = {
+    mode: 'idle',
+    exerciseIndex: selectedStartIndex,
+    setIndex: 0,
+    restRemaining: 0,
+    beforePauseMode: 'idle',
+  }
+}
+
+function teardownPanel(): void {
+  clearRestTimer()
+  document.getElementById(panelId)?.remove()
+  activeStorageKey = ''
+  video = null
+  resetRuntime()
+}
+
 function setupNavigationWatcher(): void {
-  window.setInterval(() => {
-    const key = getStorageKey()
-    if (key === activeStorageKey) {
+  if (navigationWatcherId !== undefined) {
+    return
+  }
+
+  navigationWatcherId = window.setInterval(() => {
+    const bvid = getCurrentBvid()
+    if (!bvid) {
+      if (document.getElementById(panelId)) {
+        teardownPanel()
+      }
       return
     }
 
-    activeStorageKey = key
-    const plan = loadPlan()
-    rawInput = plan.rawInput
-    settings = plan.settings
-    clearRestTimer()
-    runtime = {
-      mode: 'idle',
-      exerciseIndex: 0,
-      setIndex: 0,
-      restRemaining: 0,
-      beforePauseMode: 'idle',
+    const key = getStorageKey()
+    if (!document.getElementById(panelId)) {
+      void init()
+      return
     }
-    render()
+    if (key === activeStorageKey || navigationReloadInProgress) {
+      return
+    }
+
+    void (async () => {
+      navigationReloadInProgress = true
+      try {
+        const nextVideo = document.querySelector<HTMLVideoElement>('video') ?? (await waitForVideo(5000))
+        if (!nextVideo) {
+          teardownPanel()
+          return
+        }
+
+        activeStorageKey = key
+        const plan = loadPlan()
+        rawInput = plan.rawInput
+        settings = plan.settings
+        exercises = plan.savedExercises
+        selectedStartIndex = 0
+        clearRestTimer()
+        resetRuntime()
+        video = nextVideo
+        setLoopGuard(video)
+        render()
+      } finally {
+        navigationReloadInProgress = false
+      }
+    })()
   }, 1000)
 }
 
 function setupViewportWatcher(): void {
+  if (viewportWatcherReady) {
+    return
+  }
+  viewportWatcherReady = true
   window.addEventListener('resize', () => {
     const panel = document.getElementById(panelId)
     if (!panel) {
@@ -1193,22 +1333,40 @@ function setupViewportWatcher(): void {
 }
 
 async function init(): Promise<void> {
-  if (document.getElementById(panelId)) {
+  if (initInProgress || document.getElementById(panelId)) {
+    return
+  }
+  if (!getCurrentBvid()) {
     return
   }
 
-  activeStorageKey = getStorageKey()
-  const plan = loadPlan()
-  const preferences = loadPreferences()
-  rawInput = plan.rawInput
-  settings = plan.settings
-  panelPosition = preferences.panelPosition
-  video = await waitForVideo()
-  injectStyle()
-  setLoopGuard()
-  render()
-  setupNavigationWatcher()
-  setupViewportWatcher()
+  initInProgress = true
+  try {
+    const nextVideo = await waitForVideo()
+    if (!nextVideo || !getCurrentBvid()) {
+      return
+    }
+
+    activeStorageKey = getStorageKey()
+    const plan = loadPlan()
+    const preferences = loadPreferences()
+    rawInput = plan.rawInput
+    settings = plan.settings
+    exercises = plan.savedExercises
+    inputCollapsed = preferences.inputCollapsed
+    previewCollapsed = preferences.previewCollapsed
+    panelPosition = preferences.panelPosition
+    selectedStartIndex = 0
+    resetRuntime()
+    video = nextVideo
+    injectStyle()
+    setLoopGuard(video)
+    render()
+  } finally {
+    initInProgress = false
+  }
 }
 
+setupNavigationWatcher()
+setupViewportWatcher()
 void init()
