@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.7
+// @version      0.4.8
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
@@ -540,10 +540,10 @@
   function getPanelSizeLimits() {
     const margin = 10;
     return {
-      minWidth: 420,
-      minHeight: 360,
-      maxWidth: Math.max(420, window.innerWidth - margin * 2),
-      maxHeight: Math.max(360, window.innerHeight - margin * 2)
+      minWidth: 450,
+      minHeight: 420,
+      maxWidth: Math.max(450, window.innerWidth - margin * 2),
+      maxHeight: Math.max(420, window.innerHeight - margin * 2)
     };
   }
   function clampPanelSize(size) {
@@ -1155,8 +1155,8 @@
       right: 14px;
       top: 88px;
       z-index: 2147483647;
-      width: min(620px, calc(100vw - 28px));
-      height: min(680px, calc(100vh - 104px));
+      width: min(660px, calc(100vw - 28px));
+      height: min(740px, calc(100vh - 88px));
       color: #f6f7f9;
       background: rgba(22, 24, 29, 0.94);
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1219,7 +1219,7 @@
     }
     .bft-main-grid {
       display: grid;
-      grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr);
+      grid-template-rows: minmax(0, 1.25fr) minmax(0, 0.75fr);
       gap: 8px;
       height: 100%;
       min-height: 0;
@@ -1340,6 +1340,9 @@
       border-radius: 6px;
       padding: 7px;
       outline: none;
+      overflow-x: auto;
+      white-space: pre;
+      word-break: normal;
     }
     .bft-text-input {
       width: 100%;
@@ -1548,7 +1551,7 @@
         top: auto;
         bottom: max(0px, env(safe-area-inset-bottom));
         width: auto;
-        height: min(76dvh, 560px);
+        height: min(84dvh, 640px);
         border-radius: 8px 8px 0 0;
       }
       .bft-header {
@@ -1561,7 +1564,7 @@
         height: calc(100% - 42px);
       }
       .bft-input {
-        min-height: 96px;
+        min-height: 108px;
       }
       .bft-field-grid {
         grid-template-columns: 1fr;
@@ -1616,8 +1619,8 @@
       #${panelId} {
         right: 12px;
         top: 72px;
-        width: min(680px, calc(100vw - 24px));
-        height: min(700px, calc(100vh - 90px));
+        width: min(760px, calc(100vw - 24px));
+        height: min(780px, calc(100vh - 84px));
       }
       .bft-body {
         height: calc(100% - 40px);
@@ -1632,7 +1635,7 @@
     }
     @media (min-width: 820px) {
       .bft-main-grid {
-        grid-template-columns: minmax(250px, 0.9fr) minmax(260px, 1.1fr);
+        grid-template-columns: minmax(290px, 1fr) minmax(260px, 1fr);
         grid-template-rows: minmax(0, 1fr);
         align-items: start;
       }
@@ -1745,6 +1748,13 @@
         activePlanNotes = value.trim();
       }, true)
     );
+    const actions = document.createElement("div");
+    actions.className = "bft-row";
+    actions.append(createButton("保存信息", () => {
+      savePlan("已保存子分组信息");
+      render();
+    }, "bft-primary"));
+    wrapper.append(actions);
     return wrapper;
   }
   function compactText(value, maxLength = 72) {
@@ -1985,6 +1995,7 @@
     status.append(statusTitle, statusDetail, saveStatus);
     const textarea = document.createElement("textarea");
     textarea.className = "bft-input";
+    textarea.wrap = "off";
     textarea.placeholder = "俯卧撑 00:12-00:28 3x8-12 rest45";
     textarea.value = rawInput;
     textarea.addEventListener("input", () => {
