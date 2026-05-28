@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.4
+// @version      0.4.5
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
 // @match        https://bilibili.com/*
-// @downloadURL  https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-fitness-timer.user.js
-// @updateURL    https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-fitness-timer.user.js
+// @downloadURL  https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/dist/bili-fitness-timer.user.js
+// @updateURL    https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/dist/bili-fitness-timer.user.js
 // @supportURL   https://github.com/RyanChouHua/bili-fitness-timer/issues
 // @grant        none
 // @run-at       document-idle
@@ -17,7 +17,7 @@
   "use strict";
   const planStoragePrefix = "bili-fitness-timer:";
   const defaultPreferencesStorageKey = `${planStoragePrefix}preferences`;
-  const timestampLibraryBaseUrl = "https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/timestamps";
+  const timestampLibraryBaseUrl = "https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/timestamps";
   const timestampPattern = String.raw`(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d+)?|(?:(?:\d+\s*时)?(?:\d+\s*分)?\d+(?:\.\d+)?\s*秒|(?:\d+\s*时)?\d+\s*分(?:\s*\d+(?:\.\d+)?\s*秒)?)`;
   const bvidPattern = /BV[0-9A-Za-z]{10}/i;
   function isBilibiliUrl(url) {

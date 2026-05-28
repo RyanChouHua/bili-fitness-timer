@@ -7,10 +7,10 @@
 GitHub raw 安装地址：
 
 ```text
-https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-fitness-timer.user.js
+https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/dist/bili-fitness-timer.user.js
 ```
 
-浏览器安装 Tampermonkey 后打开上面的地址即可安装。后续脚本通过 `@updateURL` 从同一 raw 地址检查更新。
+浏览器安装 Tampermonkey 后打开上面的地址即可安装。后续脚本通过 `@updateURL` 从同一 GitHub raw 地址检查更新。
 
 ## 功能
 
@@ -48,7 +48,7 @@ timestamps/<BV号>.json
 脚本会按当前视频 BV 号请求：
 
 ```text
-https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/timestamps/<BV号>.json
+https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/timestamps/<BV号>.json
 ```
 
 示例格式见 [timestamps/BV1xx411c7mD.json](timestamps/BV1xx411c7mD.json)。

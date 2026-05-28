@@ -18,8 +18,8 @@ const packageJson = JSON.parse(await readText('../package.json'))
 assert.equal(packageJson.scripts.test, 'node scripts/check.mjs')
 
 const viteConfig = await readText('../vite.config.ts')
-assert.match(viteConfig, /@downloadURL\s+https:\/\/raw\.githubusercontent\.com\/RyanChouHua\/bili-fitness-timer\/main\/dist\/bili-fitness-timer\.user\.js/)
-assert.match(viteConfig, /@updateURL\s+https:\/\/raw\.githubusercontent\.com\/RyanChouHua\/bili-fitness-timer\/main\/dist\/bili-fitness-timer\.user\.js/)
+assert.match(viteConfig, /@downloadURL\s+https:\/\/github\.com\/RyanChouHua\/bili-fitness-timer\/raw\/refs\/heads\/main\/dist\/bili-fitness-timer\.user\.js/)
+assert.match(viteConfig, /@updateURL\s+https:\/\/github\.com\/RyanChouHua\/bili-fitness-timer\/raw\/refs\/heads\/main\/dist\/bili-fitness-timer\.user\.js/)
 assert.match(viteConfig, /@match\s+https:\/\/www\.bilibili\.com\/\*/)
 assert.match(viteConfig, /@match\s+https:\/\/m\.bilibili\.com\/\*/)
 
@@ -32,7 +32,7 @@ assert.equal(extractBvidFromUrl('https://www.bilibili.com/account/history'), nul
 assert.equal(extractBvidFromUrl(`https://example.com/video/${bvid}`), null)
 assert.equal(
   getTimestampLibraryUrl(bvid),
-  `https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/timestamps/${bvid}.json`,
+  `https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/timestamps/${bvid}.json`,
 )
 assert.equal(getPlanStorageKey(bvid), `bili-fitness-timer:${bvid}`)
 assert.equal(isPlanStorageKey(`bili-fitness-timer:${bvid}`), true)

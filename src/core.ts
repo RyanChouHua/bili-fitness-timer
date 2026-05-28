@@ -39,7 +39,7 @@ export interface SavedPlanSummary {
 export const planStoragePrefix = 'bili-fitness-timer:'
 export const defaultPreferencesStorageKey = `${planStoragePrefix}preferences`
 export const timestampLibraryBaseUrl =
-  'https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/timestamps'
+  'https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/timestamps'
 
 export const timestampPattern =
   String.raw`(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d+)?|(?:(?:\d+\s*时)?(?:\d+\s*分)?\d+(?:\.\d+)?\s*秒|(?:\d+\s*时)?\d+\s*分(?:\s*\d+(?:\.\d+)?\s*秒)?)`
