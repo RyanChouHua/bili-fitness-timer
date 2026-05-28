@@ -1279,10 +1279,32 @@ function injectStyle(): void {
       font-size: 11px;
       color: rgba(246, 247, 249, 0.58);
     }
+    .bft-group-summary {
+      display: grid;
+      gap: 2px;
+      padding: 6px 7px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.06);
+      min-width: 0;
+    }
+    .bft-group-summary strong,
+    .bft-group-summary span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bft-group-summary strong {
+      font-size: 13px;
+      line-height: 1.3;
+    }
     .bft-field-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 6px;
+    }
+    .bft-field-actions {
+      justify-content: flex-end;
     }
     .bft-field {
       display: grid;
@@ -1391,6 +1413,10 @@ function injectStyle(): void {
       border: 1px solid rgba(255, 255, 255, 0.16);
       border-radius: 6px;
       padding: 3px 6px;
+    }
+    .bft-select option {
+      color: #1f2329;
+      background: #ffffff;
     }
     .bft-check {
       display: inline-flex;
@@ -1751,7 +1777,7 @@ function createPlanInfoForm(): HTMLElement {
     }, true),
   )
   const actions = document.createElement('div')
-  actions.className = 'bft-row'
+  actions.className = 'bft-row bft-field-actions'
   actions.append(createButton('保存信息', () => {
     savePlan('已保存子分组信息')
     render()
@@ -1862,10 +1888,18 @@ function createGroupPager(): HTMLElement {
 function createGroupActions(): HTMLElement {
   const wrapper = document.createElement('div')
   wrapper.className = 'bft-tool-group'
+  const summary = document.createElement('div')
+  summary.className = 'bft-group-summary'
+  const title = document.createElement('strong')
+  title.textContent = activePlanTitle || '未命名子分组'
+  const author = document.createElement('span')
+  author.className = 'bft-muted'
+  author.textContent = activePlanAuthor ? `作者：${activePlanAuthor}` : '作者：未填写'
   const label = document.createElement('span')
   label.className = 'bft-tool-label'
   label.textContent = `视频分组 ${getCurrentStorageId()} · ${planGroups.length} 个子分组`
-  wrapper.append(label)
+  summary.append(title, author)
+  wrapper.append(summary, label)
   return wrapper
 }
 
