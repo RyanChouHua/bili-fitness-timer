@@ -11,6 +11,7 @@ dist/*
 *.code-workspace
 
 # Local notes and agent-only drafts
+maintenance-local/
 AGENTS.md
 AGENTS.local.md
 CLAUDE.md
