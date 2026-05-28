@@ -2,6 +2,7 @@ node_modules/
 dist/*
 !dist/
 !dist/bili-fitness-timer.user.js
+!dist/bili-fitness-timer.meta.js
 .vite/
 
 # Local editor and workspace files

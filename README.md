@@ -7,10 +7,10 @@
 GitHub raw 安装地址：
 
 ```text
-https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/dist/bili-fitness-timer.user.js
+https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-fitness-timer.user.js
 ```
 
-浏览器安装 Tampermonkey 后打开上面的地址即可安装。后续脚本通过 `@updateURL` 从同一 GitHub raw 地址检查更新。
+浏览器安装 Tampermonkey 后打开上面的地址即可安装。后续脚本通过 `@updateURL` 从 `dist/bili-fitness-timer.meta.js` 检查版本，再通过 `@downloadURL` 下载完整脚本。
 
 ## 功能
 
@@ -89,6 +89,7 @@ dist/bili-fitness-timer.user.js
 ```
 
 `dist/bili-fitness-timer.user.js` 需要提交到 Git，因为它是 GitHub raw 安装和 Tampermonkey 自动更新入口。
+`dist/bili-fitness-timer.meta.js` 也需要提交到 Git，因为 Tampermonkey 用它检查更新版本。
 
 ## 发布
 

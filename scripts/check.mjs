@@ -17,9 +17,11 @@ const readText = path => readFile(new URL(path, import.meta.url), 'utf8')
 const packageJson = JSON.parse(await readText('../package.json'))
 assert.equal(packageJson.scripts.test, 'node scripts/check.mjs')
 
+const rawBaseUrl = 'https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main'
 const viteConfig = await readText('../vite.config.ts')
-assert.match(viteConfig, /@downloadURL\s+https:\/\/github\.com\/RyanChouHua\/bili-fitness-timer\/raw\/refs\/heads\/main\/dist\/bili-fitness-timer\.user\.js/)
-assert.match(viteConfig, /@updateURL\s+https:\/\/github\.com\/RyanChouHua\/bili-fitness-timer\/raw\/refs\/heads\/main\/dist\/bili-fitness-timer\.user\.js/)
+assert.match(viteConfig, /fileName: 'bili-fitness-timer\.meta\.js'/)
+assert.match(viteConfig, new RegExp(`@downloadURL\\s+\\$\\{rawBaseUrl\\}/dist/bili-fitness-timer\\.user\\.js`))
+assert.match(viteConfig, new RegExp(`@updateURL\\s+\\$\\{rawBaseUrl\\}/dist/bili-fitness-timer\\.meta\\.js`))
 assert.match(viteConfig, /@match\s+https:\/\/www\.bilibili\.com\/\*/)
 assert.match(viteConfig, /@match\s+https:\/\/m\.bilibili\.com\/\*/)
 
