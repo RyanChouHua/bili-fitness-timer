@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.3.1
+// @version      0.4.0
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
@@ -59,9 +59,6 @@
   }
   function getPlanStorageKey(id) {
     return `${planStoragePrefix}${id}`;
-  }
-  function isPlanStorageKey(key, preferencesStorageKey2 = defaultPreferencesStorageKey) {
-    return key.startsWith(planStoragePrefix) && key !== preferencesStorageKey2;
   }
   function booleanPreference(value, fallback) {
     return typeof value === "boolean" ? value : fallback;
@@ -215,33 +212,6 @@
       exercises: importedExercises
     };
   }
-  function summarizeStoredPlan(storageKey, storedValue) {
-    try {
-      const parsed = JSON.parse(storedValue);
-      const storageId = storageKey.startsWith(planStoragePrefix) ? storageKey.slice(planStoragePrefix.length) : storageKey;
-      const savedExercises = normalizeExerciseList(parsed.savedExercises);
-      const rawInput2 = typeof parsed.rawInput === "string" ? parsed.rawInput : serializeExercises(savedExercises);
-      const parsedFromInput = savedExercises.length > 0 ? savedExercises : parsePlan(rawInput2).exercises;
-      if (!rawInput2.trim() && parsedFromInput.length === 0) {
-        return null;
-      }
-      const bvid = typeof parsed.bvid === "string" ? normalizeBvid(parsed.bvid) : normalizeBvid(storageId);
-      const title = normalizeOptionalText(parsed.title) ?? bvid ?? storageId;
-      const updatedAt = typeof parsed.updatedAt === "number" && Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : null;
-      return {
-        storageKey,
-        storageId,
-        bvid,
-        title,
-        author: normalizeOptionalText(parsed.author),
-        notes: normalizeOptionalText(parsed.notes),
-        actionCount: parsedFromInput.length,
-        updatedAt
-      };
-    } catch {
-      return null;
-    }
-  }
   const panelId = "bili-fitness-timer-panel";
   const styleId = "bili-fitness-timer-style";
   const preferencesStorageKey = defaultPreferencesStorageKey;
@@ -256,7 +226,7 @@
   let collapsed = false;
   let inputCollapsed = false;
   let previewCollapsed = false;
-  let managerCollapsed = true;
+  let managerCollapsed = false;
   let previewLocked = true;
   let selectedStartIndex = 0;
   let panelPosition = null;
@@ -273,9 +243,11 @@
   let navigationWatcherId;
   let viewportWatcherReady = false;
   let activeStorageKey = "";
+  let activeGroupId = "";
   let activePlanTitle = "";
   let activePlanAuthor = "";
   let activePlanNotes = "";
+  let planGroups = [];
   let initInProgress = false;
   let navigationReloadInProgress = false;
   const guardedVideos = /* @__PURE__ */ new WeakSet();
@@ -288,6 +260,10 @@
   function getStorageKey() {
     return getPlanStorageKey(getCurrentStorageId());
   }
+  function createGroupId() {
+    const random = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return `group-${random}`;
+  }
   function optionalText(value) {
     if (typeof value !== "string") {
       return void 0;
@@ -295,12 +271,63 @@
     const trimmed = value.trim();
     return trimmed ? trimmed : void 0;
   }
-  function loadPlan() {
-    var _a, _b;
-    const fallback = {
+  function createEmptyGroup(title = "训练分组 1") {
+    const now = Date.now();
+    return {
+      id: createGroupId(),
       rawInput: "",
       settings: { ...defaultSettings },
-      savedExercises: []
+      savedExercises: [],
+      bvid: getCurrentBvid(),
+      title,
+      createdAt: now,
+      updatedAt: now
+    };
+  }
+  function normalizeStoredPlan(value, fallbackTitle, index = 0) {
+    var _a, _b;
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+    const parsed = value;
+    const savedExercises = normalizeExerciseList(parsed.savedExercises);
+    const id = optionalText(parsed.id) ?? `legacy-${index + 1}`;
+    const title = optionalText(parsed.title) ?? fallbackTitle;
+    return {
+      id,
+      rawInput: typeof parsed.rawInput === "string" ? parsed.rawInput : serializeExercises(savedExercises),
+      settings: {
+        beepDuration: typeof ((_a = parsed.settings) == null ? void 0 : _a.beepDuration) === "number" ? parsed.settings.beepDuration : defaultSettings.beepDuration,
+        pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : defaultSettings.pauseDuringRest
+      },
+      savedExercises,
+      bvid: typeof parsed.bvid === "string" ? normalizeBvid(parsed.bvid) : getCurrentBvid(),
+      title,
+      author: optionalText(parsed.author),
+      notes: optionalText(parsed.notes),
+      createdAt: typeof parsed.createdAt === "number" ? parsed.createdAt : void 0,
+      updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : void 0
+    };
+  }
+  function createLibraryFromLegacy(parsed) {
+    const legacyGroup = normalizeStoredPlan(parsed, document.title || getCurrentStorageId()) ?? createEmptyGroup();
+    activeGroupId = legacyGroup.id;
+    return {
+      schemaVersion: 2,
+      bvid: getCurrentBvid(),
+      activeGroupId: legacyGroup.id,
+      groups: [legacyGroup],
+      updatedAt: legacyGroup.updatedAt
+    };
+  }
+  function loadPlanLibrary() {
+    const fallbackGroup = createEmptyGroup();
+    const fallback = {
+      schemaVersion: 2,
+      bvid: getCurrentBvid(),
+      activeGroupId: fallbackGroup.id,
+      groups: [fallbackGroup],
+      updatedAt: fallbackGroup.updatedAt
     };
     try {
       const saved = localStorage.getItem(getStorageKey());
@@ -308,41 +335,110 @@
         return fallback;
       }
       const parsed = JSON.parse(saved);
-      const savedExercises = normalizeExerciseList(parsed.savedExercises);
+      if (!Array.isArray(parsed.groups)) {
+        return createLibraryFromLegacy(parsed);
+      }
+      const groups = parsed.groups.map((group, index) => normalizeStoredPlan(group, `训练分组 ${index + 1}`, index)).filter((group) => group !== null);
+      if (groups.length === 0) {
+        return fallback;
+      }
+      const activeId = optionalText(parsed.activeGroupId);
+      const activeGroupId2 = activeId && groups.some((group) => group.id === activeId) ? activeId : groups[0].id;
       return {
-        rawInput: typeof parsed.rawInput === "string" ? parsed.rawInput : serializeExercises(savedExercises),
-        settings: {
-          beepDuration: typeof ((_a = parsed.settings) == null ? void 0 : _a.beepDuration) === "number" ? parsed.settings.beepDuration : defaultSettings.beepDuration,
-          pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : defaultSettings.pauseDuringRest
-        },
-        savedExercises,
+        schemaVersion: 2,
         bvid: typeof parsed.bvid === "string" ? normalizeBvid(parsed.bvid) : getCurrentBvid(),
-        title: optionalText(parsed.title),
-        author: optionalText(parsed.author),
-        notes: optionalText(parsed.notes),
+        activeGroupId: activeGroupId2,
+        groups,
         updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : void 0
       };
     } catch {
       return fallback;
     }
   }
-  function savePlan(statusText = "已自动保存") {
+  function getActiveGroup(library = planGroups) {
+    return library.find((group) => group.id === activeGroupId) ?? library[0] ?? null;
+  }
+  function applyPlanGroup(group, groups = planGroups) {
+    planGroups = groups;
+    activeGroupId = group.id;
+    rawInput = group.rawInput;
+    settings = group.settings;
+    exercises = group.savedExercises;
+    activePlanTitle = group.title ?? document.title;
+    activePlanAuthor = group.author ?? "";
+    activePlanNotes = group.notes ?? "";
+    selectedStartIndex = 0;
+    clearRestTimer();
+    resetRuntime();
+  }
+  function loadPlan() {
+    const library = loadPlanLibrary();
+    planGroups = library.groups;
+    activeGroupId = library.activeGroupId;
+    return getActiveGroup(library.groups) ?? createEmptyGroup();
+  }
+  function savePlan(statusText = "已自动保存", nextActiveGroupId = activeGroupId) {
+    var _a;
     const parseResult = parsePlan(rawInput);
     const savedExercises = parseResult.errors.length === 0 ? parseResult.exercises : exercises;
-    localStorage.setItem(
-      getStorageKey(),
-      JSON.stringify({
+    const now = Date.now();
+    let hasActiveGroup = false;
+    const nextGroups = planGroups.map((group) => {
+      if (group.id !== nextActiveGroupId) {
+        return group;
+      }
+      hasActiveGroup = true;
+      return {
+        ...group,
         rawInput,
         settings,
         savedExercises,
         bvid: getCurrentBvid(),
-        title: activePlanTitle || document.title || getCurrentStorageId(),
+        title: activePlanTitle || group.title || document.title || getCurrentStorageId(),
         author: optionalText(activePlanAuthor),
         notes: optionalText(activePlanNotes),
-        updatedAt: Date.now()
+        createdAt: group.createdAt ?? now,
+        updatedAt: now
+      };
+    });
+    if (!hasActiveGroup) {
+      nextGroups.push({
+        ...createEmptyGroup(activePlanTitle || "训练分组 1"),
+        id: nextActiveGroupId || createGroupId(),
+        rawInput,
+        settings,
+        savedExercises,
+        author: optionalText(activePlanAuthor),
+        notes: optionalText(activePlanNotes),
+        updatedAt: now
+      });
+    }
+    planGroups = nextGroups;
+    activeGroupId = nextActiveGroupId || ((_a = nextGroups[0]) == null ? void 0 : _a.id) || "";
+    localStorage.setItem(
+      getStorageKey(),
+      JSON.stringify({
+        schemaVersion: 2,
+        bvid: getCurrentBvid(),
+        activeGroupId,
+        groups: nextGroups,
+        updatedAt: now
       })
     );
     saveStatusText = parseResult.errors.length === 0 ? statusText : "输入有错误，已保留上次有效动作";
+  }
+  function persistPlanLibrary(statusText = "已保存分组") {
+    localStorage.setItem(
+      getStorageKey(),
+      JSON.stringify({
+        schemaVersion: 2,
+        bvid: getCurrentBvid(),
+        activeGroupId,
+        groups: planGroups,
+        updatedAt: Date.now()
+      })
+    );
+    saveStatusText = statusText;
   }
   function loadPreferences() {
     try {
@@ -352,7 +448,7 @@
           panelPosition: null,
           inputCollapsed: false,
           previewCollapsed: false,
-          managerCollapsed: true,
+          managerCollapsed: false,
           previewLocked: true
         };
       }
@@ -362,7 +458,7 @@
         panelPosition: null,
         inputCollapsed: booleanPreference(parsed.inputCollapsed, false),
         previewCollapsed: booleanPreference(parsed.previewCollapsed, false),
-        managerCollapsed: booleanPreference(parsed.managerCollapsed, true),
+        managerCollapsed: booleanPreference(parsed.managerCollapsed, false),
         previewLocked: booleanPreference(parsed.previewLocked, true)
       };
       if (position && typeof position.left === "number" && typeof position.top === "number") {
@@ -377,7 +473,7 @@
         panelPosition: null,
         inputCollapsed: false,
         previewCollapsed: false,
-        managerCollapsed: true,
+        managerCollapsed: false,
         previewLocked: true
       };
     }
@@ -385,7 +481,7 @@
       panelPosition: null,
       inputCollapsed: false,
       previewCollapsed: false,
-      managerCollapsed: true,
+      managerCollapsed: false,
       previewLocked: true
     };
   }
@@ -499,31 +595,39 @@
     link.click();
     URL.revokeObjectURL(link.href);
   }
+  function addImportedPlanGroup(imported, parsedSettings, fallbackTitle, statusText) {
+    const nextGroup = {
+      id: createGroupId(),
+      rawInput: imported.rawInput,
+      settings: {
+        beepDuration: typeof (parsedSettings == null ? void 0 : parsedSettings.beepDuration) === "number" ? parsedSettings.beepDuration : settings.beepDuration,
+        pauseDuringRest: typeof (parsedSettings == null ? void 0 : parsedSettings.pauseDuringRest) === "boolean" ? parsedSettings.pauseDuringRest : settings.pauseDuringRest
+      },
+      savedExercises: imported.exercises,
+      bvid: imported.bvid ?? getCurrentBvid(),
+      title: imported.title ?? fallbackTitle,
+      author: imported.author ?? void 0,
+      notes: imported.notes ?? void 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    planGroups = [...planGroups, nextGroup];
+    applyPlanGroup(nextGroup, planGroups);
+    const parseResult = parsePlan(rawInput);
+    exercises = parseResult.errors.length === 0 ? parseResult.exercises : imported.exercises;
+    savePlan(statusText, nextGroup.id);
+    render();
+  }
   async function importPlanFromFile(file) {
-    var _a, _b;
     const text = await file.text();
     const parsed = JSON.parse(text);
     const imported = normalizeImportedPlanData(parsed);
-    rawInput = imported.rawInput;
-    activePlanTitle = imported.title ?? file.name.replace(/\.json$/i, "");
-    activePlanAuthor = imported.author ?? "";
-    activePlanNotes = imported.notes ?? "";
-    settings = {
-      beepDuration: typeof ((_a = parsed.settings) == null ? void 0 : _a.beepDuration) === "number" ? parsed.settings.beepDuration : settings.beepDuration,
-      pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : settings.pauseDuringRest
-    };
-    selectedStartIndex = 0;
-    runtime = {
-      mode: "idle",
-      exerciseIndex: 0,
-      setIndex: 0,
-      restRemaining: 0,
-      beforePauseMode: "idle"
-    };
-    const parseResult = parsePlan(rawInput);
-    exercises = parseResult.errors.length === 0 ? parseResult.exercises : imported.exercises;
-    savePlan("已导入本地 JSON");
-    render();
+    addImportedPlanGroup(
+      imported,
+      parsed.settings,
+      file.name.replace(/\.json$/i, ""),
+      "已导入本地 JSON 为新分组"
+    );
   }
   async function importPlanFromOnline() {
     const bvid = getCurrentBvid();
@@ -553,25 +657,14 @@
       if (parseResult.errors.length > 0) {
         throw new Error(`在线时间戳格式错误：${parseResult.errors[0]}`);
       }
-      rawInput = imported.rawInput;
-      activePlanTitle = imported.title ?? document.title;
-      activePlanAuthor = imported.author ?? "";
-      activePlanNotes = imported.notes ?? "";
-      exercises = parseResult.exercises;
-      selectedStartIndex = 0;
-      clearRestTimer();
-      runtime = {
-        mode: "idle",
-        exerciseIndex: 0,
-        setIndex: 0,
-        restRemaining: 0,
-        beforePauseMode: "idle"
-      };
-      savePlan(`已在线导入 ${bvid}`);
+      addImportedPlanGroup(imported, void 0, document.title, `已在线导入 ${bvid} 为新分组`);
     } catch (error) {
       saveStatusText = error instanceof Error ? error.message : "在线导入失败";
     } finally {
       onlineImportBusy = false;
+      if (!document.getElementById(panelId)) {
+        return;
+      }
       render();
     }
   }
@@ -591,75 +684,73 @@
     });
     input.click();
   }
-  function getSavedPlanSummaries() {
-    const summaries = [];
-    for (let index = 0; index < localStorage.length; index += 1) {
-      const key = localStorage.key(index);
-      if (!key || !isPlanStorageKey(key, preferencesStorageKey)) {
-        continue;
-      }
-      const value = localStorage.getItem(key);
-      if (value === null) {
-        continue;
-      }
-      const summary = summarizeStoredPlan(key, value);
-      if (summary) {
-        summaries.push(summary);
-      }
-    }
-    return summaries.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-  }
-  function loadPlanByStorageKey(storageKey) {
-    var _a, _b;
-    const saved = localStorage.getItem(storageKey);
-    if (!saved) {
-      saveStatusText = "未找到本地保存数据";
+  function switchToGroup(groupId) {
+    const group = planGroups.find((item) => item.id === groupId);
+    if (!group) {
+      saveStatusText = "未找到训练分组";
       render();
       return;
     }
-    try {
-      const parsed = JSON.parse(saved);
-      const savedExercises = normalizeExerciseList(parsed.savedExercises);
-      rawInput = typeof parsed.rawInput === "string" ? parsed.rawInput : serializeExercises(savedExercises);
-      settings = {
-        beepDuration: typeof ((_a = parsed.settings) == null ? void 0 : _a.beepDuration) === "number" ? parsed.settings.beepDuration : defaultSettings.beepDuration,
-        pauseDuringRest: typeof ((_b = parsed.settings) == null ? void 0 : _b.pauseDuringRest) === "boolean" ? parsed.settings.pauseDuringRest : defaultSettings.pauseDuringRest
-      };
-      activePlanTitle = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : storageKey.replace(/^bili-fitness-timer:/, "");
-      activePlanAuthor = optionalText(parsed.author) ?? "";
-      activePlanNotes = optionalText(parsed.notes) ?? "";
-      const parseResult = parsePlan(rawInput);
-      exercises = parseResult.errors.length === 0 ? parseResult.exercises : savedExercises;
-      selectedStartIndex = 0;
-      clearRestTimer();
-      resetRuntime();
-      saveStatusText = "已加载本地保存数据";
-      render();
-    } catch {
-      saveStatusText = "本地保存数据格式错误";
-      render();
-    }
-  }
-  function deletePlanByStorageKey(storageKey) {
-    const summary = getSavedPlanSummaries().find((item) => item.storageKey === storageKey);
-    const label = (summary == null ? void 0 : summary.title) ?? storageKey;
-    if (!window.confirm(`删除本地保存数据：${label}？`)) {
+    if (group.id === activeGroupId) {
       return;
     }
-    localStorage.removeItem(storageKey);
-    if (storageKey === activeStorageKey) {
-      rawInput = "";
-      exercises = [];
-      activePlanTitle = "";
-      activePlanAuthor = "";
-      activePlanNotes = "";
-      selectedStartIndex = 0;
-      clearRestTimer();
-      resetRuntime();
-      saveStatusText = "已删除当前视频本地数据";
-    } else {
-      saveStatusText = "已删除本地保存数据";
+    savePlan("已保存当前分组");
+    const latestGroup = planGroups.find((item) => item.id === groupId);
+    if (!latestGroup) {
+      return;
     }
+    applyPlanGroup(latestGroup, planGroups);
+    persistPlanLibrary("已切换训练分组");
+    render();
+  }
+  function createNewGroup() {
+    savePlan("已保存当前分组");
+    const group = createEmptyGroup(`训练分组 ${planGroups.length + 1}`);
+    planGroups = [...planGroups, group];
+    applyPlanGroup(group, planGroups);
+    persistPlanLibrary("已新建训练分组");
+    render();
+  }
+  function duplicateCurrentGroup() {
+    savePlan("已保存当前分组");
+    const current = getActiveGroup();
+    if (!current) {
+      return;
+    }
+    const now = Date.now();
+    const group = {
+      ...current,
+      id: createGroupId(),
+      title: `${current.title ?? "训练分组"} 副本`,
+      createdAt: now,
+      updatedAt: now
+    };
+    planGroups = [...planGroups, group];
+    applyPlanGroup(group, planGroups);
+    persistPlanLibrary("已复制当前分组");
+    render();
+  }
+  function deleteCurrentGroup() {
+    const current = getActiveGroup();
+    if (!current) {
+      return;
+    }
+    if (planGroups.length <= 1) {
+      window.alert("当前视频至少保留一个训练分组");
+      return;
+    }
+    const label = current.title ?? "当前分组";
+    if (!window.confirm(`删除训练分组：${label}？`)) {
+      return;
+    }
+    const nextGroups = planGroups.filter((group) => group.id !== current.id);
+    const nextGroup = nextGroups[0];
+    if (!nextGroup) {
+      return;
+    }
+    planGroups = nextGroups;
+    applyPlanGroup(nextGroup, planGroups);
+    persistPlanLibrary("已删除训练分组");
     render();
   }
   function getCurrentExercise() {
@@ -1134,6 +1225,10 @@
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.05);
     }
+    .bft-manager-active {
+      border-color: rgba(76, 201, 167, 0.85);
+      background: rgba(76, 201, 167, 0.12);
+    }
     .bft-manager-item strong,
     .bft-manager-item .bft-muted {
       min-width: 0;
@@ -1361,38 +1456,44 @@
     const normalized = value.replace(/\s+/g, " ").trim();
     return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
   }
+  function getGroupActionCount(group) {
+    if (group.savedExercises.length > 0) {
+      return group.savedExercises.length;
+    }
+    return parsePlan(group.rawInput).exercises.length;
+  }
   function createManagerList() {
     const wrapper = document.createElement("div");
     wrapper.className = "bft-manager-list";
-    const summaries = getSavedPlanSummaries();
-    if (summaries.length === 0) {
+    const groups = planGroups;
+    if (groups.length === 0) {
       const empty = document.createElement("div");
       empty.className = "bft-empty";
-      empty.textContent = "暂无本地保存数据";
+      empty.textContent = "暂无训练分组";
       wrapper.append(empty);
       return wrapper;
     }
-    summaries.forEach((summary) => {
+    groups.forEach((group, index) => {
       const item = document.createElement("div");
-      item.className = "bft-manager-item";
+      item.className = `bft-manager-item ${group.id === activeGroupId ? "bft-manager-active" : ""}`.trim();
       const title = document.createElement("strong");
-      title.textContent = summary.title;
+      title.textContent = group.title || `训练分组 ${index + 1}`;
       const meta = document.createElement("span");
       meta.className = "bft-muted";
-      const updatedText = summary.updatedAt ? new Date(summary.updatedAt).toLocaleString() : "未知时间";
-      meta.textContent = `${summary.bvid ?? summary.storageId} · ${summary.actionCount} 个动作 · ${updatedText}`;
+      const updatedText = group.updatedAt ? new Date(group.updatedAt).toLocaleString() : "未知时间";
+      meta.textContent = `${getGroupActionCount(group)} 个动作 · ${updatedText}`;
       const extraTexts = [
-        summary.author ? `作者：${compactText(summary.author, 32)}` : "",
-        summary.notes ? `备注：${compactText(summary.notes)}` : ""
+        group.author ? `作者：${compactText(group.author, 32)}` : "",
+        group.notes ? `备注：${compactText(group.notes)}` : ""
       ].filter(Boolean);
       const extra = document.createElement("span");
       extra.className = "bft-muted";
       extra.textContent = extraTexts.join(" · ");
       const actions = document.createElement("div");
       actions.className = "bft-row";
-      const loadButton = createButton("切换", () => loadPlanByStorageKey(summary.storageKey), "bft-primary");
-      const deleteButton = createButton("删除", () => deletePlanByStorageKey(summary.storageKey), "bft-danger");
-      actions.append(loadButton, deleteButton);
+      const loadButton = createButton("选择", () => switchToGroup(group.id), "bft-primary");
+      loadButton.disabled = group.id === activeGroupId;
+      actions.append(loadButton);
       item.append(title, meta);
       if (extraTexts.length > 0) {
         item.append(extra);
@@ -1400,6 +1501,42 @@
       item.append(actions);
       wrapper.append(item);
     });
+    return wrapper;
+  }
+  function createGroupActions() {
+    const wrapper = document.createElement("div");
+    wrapper.className = "bft-tool-group";
+    const label = document.createElement("span");
+    label.className = "bft-tool-label";
+    label.textContent = `当前视频分组 · ${planGroups.length}`;
+    const pickerRow = document.createElement("div");
+    pickerRow.className = "bft-row";
+    const pickerLabel = document.createElement("label");
+    pickerLabel.className = "bft-row bft-grow";
+    const pickerText = document.createElement("span");
+    pickerText.textContent = "当前分组";
+    const picker = document.createElement("select");
+    picker.className = "bft-select bft-grow";
+    planGroups.forEach((group, index) => {
+      const option = document.createElement("option");
+      option.value = group.id;
+      option.textContent = group.title || `训练分组 ${index + 1}`;
+      option.selected = group.id === activeGroupId;
+      picker.append(option);
+    });
+    picker.addEventListener("change", () => {
+      switchToGroup(picker.value);
+    });
+    pickerLabel.append(pickerText, picker);
+    pickerRow.append(pickerLabel);
+    const actions = document.createElement("div");
+    actions.className = "bft-row";
+    actions.append(
+      createButton("新建分组", createNewGroup, "bft-primary"),
+      createButton("复制当前", duplicateCurrentGroup),
+      createButton("删除当前", deleteCurrentGroup, "bft-danger")
+    );
+    wrapper.append(label, pickerRow, actions);
     return wrapper;
   }
   function render(options = {}) {
@@ -1639,7 +1776,7 @@
         managerCollapsed = !managerCollapsed;
         savePreferences();
         render();
-      }, [createPlanInfoForm(), createManagerList()]),
+      }, [createGroupActions(), createPlanInfoForm(), createManagerList()]),
       createSection(`动作预览 · ${exercises.length}`, previewCollapsed, () => {
         previewCollapsed = !previewCollapsed;
         savePreferences();
@@ -1685,6 +1822,8 @@
     clearRestTimer();
     (_a = document.getElementById(panelId)) == null ? void 0 : _a.remove();
     activeStorageKey = "";
+    activeGroupId = "";
+    planGroups = [];
     video = null;
     resetRuntime();
   }
@@ -1718,15 +1857,7 @@
           }
           activeStorageKey = key;
           const plan = loadPlan();
-          rawInput = plan.rawInput;
-          settings = plan.settings;
-          exercises = plan.savedExercises;
-          activePlanTitle = plan.title ?? document.title;
-          activePlanAuthor = plan.author ?? "";
-          activePlanNotes = plan.notes ?? "";
-          selectedStartIndex = 0;
-          clearRestTimer();
-          resetRuntime();
+          applyPlanGroup(plan, planGroups);
           video = nextVideo;
           setLoopGuard(video);
           render();
@@ -1768,19 +1899,12 @@
       activeStorageKey = getStorageKey();
       const plan = loadPlan();
       const preferences = loadPreferences();
-      rawInput = plan.rawInput;
-      settings = plan.settings;
-      exercises = plan.savedExercises;
+      applyPlanGroup(plan, planGroups);
       inputCollapsed = preferences.inputCollapsed;
       previewCollapsed = preferences.previewCollapsed;
       managerCollapsed = preferences.managerCollapsed;
       previewLocked = preferences.previewLocked;
       panelPosition = preferences.panelPosition;
-      activePlanTitle = plan.title ?? document.title;
-      activePlanAuthor = plan.author ?? "";
-      activePlanNotes = plan.notes ?? "";
-      selectedStartIndex = 0;
-      resetRuntime();
       video = nextVideo;
       injectStyle();
       setLoopGuard(video);

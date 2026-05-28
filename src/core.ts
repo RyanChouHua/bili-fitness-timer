@@ -26,6 +26,8 @@ export interface ImportedPlanData {
 export interface SavedPlanSummary {
   storageKey: string
   storageId: string
+  groupId: string | null
+  groupCount: number
   bvid: string | null
   title: string
   author: string | null
@@ -324,7 +326,9 @@ export function normalizeImportedPlanData(value: unknown): ImportedPlanData {
 export function summarizeStoredPlan(storageKey: string, storedValue: string): SavedPlanSummary | null {
   try {
     const parsed = JSON.parse(storedValue) as {
+      activeGroupId?: unknown
       bvid?: unknown
+      groups?: unknown
       title?: unknown
       author?: unknown
       notes?: unknown
@@ -335,10 +339,40 @@ export function summarizeStoredPlan(storageKey: string, storedValue: string): Sa
     const storageId = storageKey.startsWith(planStoragePrefix)
       ? storageKey.slice(planStoragePrefix.length)
       : storageKey
-    const savedExercises = normalizeExerciseList(parsed.savedExercises)
+    let payload: {
+      id?: unknown
+      bvid?: unknown
+      title?: unknown
+      author?: unknown
+      notes?: unknown
+      rawInput?: unknown
+      savedExercises?: unknown
+      updatedAt?: unknown
+    } = parsed
+    let groupId: string | null = null
+    let groupCount = 1
+
+    if (Array.isArray(parsed.groups)) {
+      const groups = parsed.groups.filter(
+        (item): item is typeof payload => Boolean(item) && typeof item === 'object',
+      )
+      groupCount = groups.length
+      const activeGroupId = normalizeOptionalText(parsed.activeGroupId)
+      const activeGroup =
+        (activeGroupId ? groups.find(group => normalizeOptionalText(group.id) === activeGroupId) : null) ??
+        groups[0]
+      if (!activeGroup) {
+        return null
+      }
+
+      payload = activeGroup
+      groupId = normalizeOptionalText(activeGroup.id)
+    }
+
+    const savedExercises = normalizeExerciseList(payload.savedExercises)
     const rawInput =
-      typeof parsed.rawInput === 'string'
-        ? parsed.rawInput
+      typeof payload.rawInput === 'string'
+        ? payload.rawInput
         : serializeExercises(savedExercises)
     const parsedFromInput = savedExercises.length > 0 ? savedExercises : parsePlan(rawInput).exercises
 
@@ -349,20 +383,26 @@ export function summarizeStoredPlan(storageKey: string, storedValue: string): Sa
     const bvid =
       typeof parsed.bvid === 'string'
         ? normalizeBvid(parsed.bvid)
+        : typeof payload.bvid === 'string'
+          ? normalizeBvid(payload.bvid)
         : normalizeBvid(storageId)
-    const title = normalizeOptionalText(parsed.title) ?? bvid ?? storageId
+    const title = normalizeOptionalText(payload.title) ?? bvid ?? storageId
     const updatedAt =
-      typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
-        ? parsed.updatedAt
+      typeof payload.updatedAt === 'number' && Number.isFinite(payload.updatedAt)
+        ? payload.updatedAt
+        : typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
+          ? parsed.updatedAt
         : null
 
     return {
       storageKey,
       storageId,
+      groupId,
+      groupCount,
       bvid,
       title,
-      author: normalizeOptionalText(parsed.author),
-      notes: normalizeOptionalText(parsed.notes),
+      author: normalizeOptionalText(payload.author),
+      notes: normalizeOptionalText(payload.notes),
       actionCount: parsedFromInput.length,
       updatedAt,
     }

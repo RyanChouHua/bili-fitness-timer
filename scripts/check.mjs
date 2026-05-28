@@ -70,10 +70,44 @@ const summary = summarizeStoredPlan(
 )
 assert.equal(summary?.storageId, bvid)
 assert.equal(summary?.title, 'Saved sample')
+assert.equal(summary?.groupId, null)
+assert.equal(summary?.groupCount, 1)
 assert.equal(summary?.author, 'Sample author')
 assert.equal(summary?.notes, 'Sample notes')
 assert.equal(summary?.actionCount, 1)
 assert.equal(summary?.updatedAt, 12345)
+const groupedSummary = summarizeStoredPlan(
+  `bili-fitness-timer:${bvid}`,
+  JSON.stringify({
+    bvid,
+    activeGroupId: 'day-2',
+    groups: [
+      {
+        id: 'day-1',
+        title: 'Day 1',
+        rawInput: 'Push Up 00:12-00:28 3x8-12 rest45',
+        savedExercises: parsed.exercises,
+        updatedAt: 111,
+      },
+      {
+        id: 'day-2',
+        title: 'Day 2',
+        author: 'Coach',
+        notes: 'Upper body day',
+        rawInput: 'Squat 01:05-01:22 4x10 rest60',
+        updatedAt: 222,
+      },
+    ],
+    updatedAt: 333,
+  }),
+)
+assert.equal(groupedSummary?.groupId, 'day-2')
+assert.equal(groupedSummary?.groupCount, 2)
+assert.equal(groupedSummary?.title, 'Day 2')
+assert.equal(groupedSummary?.author, 'Coach')
+assert.equal(groupedSummary?.notes, 'Upper body day')
+assert.equal(groupedSummary?.actionCount, 1)
+assert.equal(groupedSummary?.updatedAt, 222)
 assert.equal(summarizeStoredPlan(`bili-fitness-timer:${bvid}`, '{bad json'), null)
 
 console.log('check passed')
