@@ -1355,8 +1355,8 @@ function injectStyle(): void {
     }
     .bft-complete-button {
       width: 100%;
-      min-height: 54px;
-      font-size: 16px;
+      min-height: 72px;
+      font-size: 18px;
       letter-spacing: 0;
     }
     .bft-muted {
@@ -1628,8 +1628,8 @@ function injectStyle(): void {
         font-size: 12px;
       }
       .bft-complete-button {
-        min-height: 56px;
-        font-size: 16px;
+        min-height: 76px;
+        font-size: 18px;
       }
       .bft-tool-group .bft-button {
         flex: 1 1 calc(50% - 6px);

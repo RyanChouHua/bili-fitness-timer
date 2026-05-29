@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.14
+// @version      0.4.15
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
@@ -1364,8 +1364,8 @@
     }
     .bft-complete-button {
       width: 100%;
-      min-height: 54px;
-      font-size: 16px;
+      min-height: 72px;
+      font-size: 18px;
       letter-spacing: 0;
     }
     .bft-muted {
@@ -1637,8 +1637,8 @@
         font-size: 12px;
       }
       .bft-complete-button {
-        min-height: 56px;
-        font-size: 16px;
+        min-height: 76px;
+        font-size: 18px;
       }
       .bft-tool-group .bft-button {
         flex: 1 1 calc(50% - 6px);
