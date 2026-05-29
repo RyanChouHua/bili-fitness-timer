@@ -388,9 +388,14 @@ function loadPreferences(): Preferences {
       typeof size.width === 'number' &&
       typeof size.height === 'number'
     ) {
-      nextPreferences.panelSize = {
+      const savedSize = {
         width: size.width,
         height: size.height,
+      }
+      if (savedSize.width > 540) {
+        nextPreferences.panelPosition = null
+      } else {
+        nextPreferences.panelSize = savedSize
       }
     }
 
@@ -425,10 +430,7 @@ function savePreferences(): void {
 }
 
 function isMobileViewport(): boolean {
-  return (
-    window.matchMedia('(max-width: 720px)').matches ||
-    window.matchMedia('(pointer: coarse) and (hover: none)').matches
-  )
+  return window.matchMedia('(max-width: 640px)').matches
 }
 
 function getPanelSizeLimits(): {
@@ -438,11 +440,14 @@ function getPanelSizeLimits(): {
   maxHeight: number
 } {
   const margin = 10
+  const minWidth = Math.min(360, Math.max(280, window.innerWidth - margin * 2))
+  const maxWidth = Math.max(minWidth, Math.min(540, window.innerWidth - margin * 2))
+  const minHeight = Math.min(360, Math.max(280, window.innerHeight - margin * 2))
   return {
-    minWidth: 450,
-    minHeight: 420,
-    maxWidth: Math.max(450, window.innerWidth - margin * 2),
-    maxHeight: Math.max(420, window.innerHeight - margin * 2),
+    minWidth,
+    minHeight,
+    maxWidth,
+    maxHeight: Math.max(minHeight, window.innerHeight - margin * 2),
   }
 }
 
@@ -1145,18 +1150,18 @@ function injectStyle(): void {
   style.textContent = `
     #${panelId} {
       position: fixed;
-      right: 14px;
-      top: 32px;
+      right: 10px;
+      top: 10px;
       z-index: 2147483647;
-      width: min(950px, calc(100vw - 28px));
-      height: min(740px, calc(100dvh - 44px));
-      max-height: calc(100dvh - 16px);
+      width: min(calc(100vw - 20px), clamp(390px, 36vw, 520px));
+      height: min(760px, calc(100dvh - 20px));
+      max-height: calc(100dvh - 20px);
       color: #f6f7f9;
       background: rgba(22, 24, 29, 0.94);
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 8px;
       box-shadow: 0 12px 36px rgba(0, 0, 0, 0.34);
-      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 12.5px/1.42 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       overflow: hidden;
     }
     #${panelId} * {
@@ -1188,12 +1193,12 @@ function injectStyle(): void {
       letter-spacing: 0;
     }
     .bft-body {
-      display: grid;
-      grid-template-rows: minmax(0, 1fr);
-      gap: 8px;
-      padding: 9px;
-      height: calc(100% - 40px);
-      overflow: hidden;
+      display: block;
+      padding: 8px;
+      height: calc(100% - 39px);
+      overflow-x: hidden;
+      overflow-y: auto;
+      scrollbar-width: thin;
     }
     .bft-collapsed .bft-body {
       display: none;
@@ -1205,41 +1210,38 @@ function injectStyle(): void {
     }
     .bft-control-stack {
       display: grid;
-      gap: 7px;
+      gap: 6px;
       z-index: 1;
       padding-bottom: 2px;
       min-height: 0;
-      overflow: auto;
+      overflow: visible;
     }
     .bft-main-grid {
       display: grid;
-      grid-template-rows: minmax(0, 1.25fr) minmax(0, 0.75fr);
       gap: 8px;
-      height: 100%;
+      align-content: start;
+      height: auto;
       min-height: 0;
-      overflow: hidden;
+      overflow: visible;
     }
     .bft-main-left,
     .bft-main-right {
       display: grid;
-      gap: 8px;
+      gap: 7px;
       align-content: start;
       min-width: 0;
       min-height: 0;
-      height: 100%;
-      overflow: hidden;
-    }
-    .bft-main-left {
-      grid-template-rows: minmax(0, 1fr);
+      height: auto;
+      overflow: visible;
     }
     .bft-main-right {
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: auto;
       align-content: stretch;
     }
     .bft-status {
       display: grid;
       gap: 3px;
-      padding: 7px;
+      padding: 6px 7px;
       background: rgba(255, 255, 255, 0.07);
       border-radius: 6px;
     }
@@ -1265,14 +1267,17 @@ function injectStyle(): void {
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: 7px;
+      gap: 6px;
       min-height: 0;
-      overflow: auto;
+      overflow: visible;
       padding-right: 2px;
     }
     .bft-tool-group {
       display: grid;
       gap: 4px;
+    }
+    .bft-tool-group .bft-button {
+      flex: 1 1 0;
     }
     .bft-left-input {
       display: grid;
@@ -1327,8 +1332,8 @@ function injectStyle(): void {
     }
     .bft-complete-button {
       width: 100%;
-      min-height: 48px;
-      font-size: 15px;
+      min-height: 42px;
+      font-size: 14px;
       letter-spacing: 0;
     }
     .bft-muted {
@@ -1348,7 +1353,7 @@ function injectStyle(): void {
     }
     .bft-input {
       width: 100%;
-      min-height: 104px;
+      min-height: 98px;
       resize: vertical;
       color: #f6f7f9;
       background: rgba(0, 0, 0, 0.24);
@@ -1438,7 +1443,7 @@ function injectStyle(): void {
     .bft-manager-list {
       display: grid;
       gap: 3px;
-      max-height: 168px;
+      max-height: 138px;
       overflow-y: auto;
       padding-right: 2px;
       scrollbar-width: thin;
@@ -1448,7 +1453,7 @@ function injectStyle(): void {
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
       gap: 5px;
-      padding: 3px 5px;
+      padding: 4px 5px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.05);
@@ -1489,6 +1494,7 @@ function injectStyle(): void {
     .bft-manager-item .bft-button {
       min-height: 24px;
       padding: 2px 5px;
+      font-size: 11.5px;
     }
     .bft-pager {
       display: flex;
@@ -1508,7 +1514,7 @@ function injectStyle(): void {
       color: inherit;
       text-align: left;
       cursor: pointer;
-      padding: 6px 7px;
+      padding: 5px 7px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.05);
@@ -1564,14 +1570,14 @@ function injectStyle(): void {
     .bft-collapsed .bft-resize-handle {
       display: none;
     }
-    @media (max-width: 720px) {
+    @media (max-width: 640px) {
       #${panelId} {
         left: 6px;
         right: 6px;
         top: auto;
         bottom: max(0px, env(safe-area-inset-bottom));
         width: auto;
-        height: min(84dvh, 640px);
+        height: min(86dvh, 640px);
         border-radius: 8px 8px 0 0;
       }
       .bft-header {
@@ -1579,19 +1585,18 @@ function injectStyle(): void {
         touch-action: auto;
       }
       .bft-body {
-        gap: 7px;
         padding: 8px;
         height: calc(100% - 42px);
       }
       .bft-input {
-        min-height: 108px;
+        min-height: 104px;
       }
       .bft-field-grid {
         grid-template-columns: 1fr;
       }
       .bft-button,
       .bft-select {
-        min-height: 34px;
+        min-height: 32px;
       }
       .bft-tool-row .bft-button,
       .bft-control-row .bft-button {
@@ -1600,7 +1605,7 @@ function injectStyle(): void {
         font-size: 12px;
       }
       .bft-complete-button {
-        min-height: 54px;
+        min-height: 48px;
         font-size: 15px;
       }
       .bft-tool-group .bft-button {
@@ -1635,59 +1640,20 @@ function injectStyle(): void {
         display: none;
       }
     }
-    @media (min-width: 721px) and (max-width: 1024px) {
+    @media (min-width: 641px) and (max-width: 1180px) {
       #${panelId} {
-        right: 10px;
-        top: 10px;
-        width: min(700px, calc(100vw - 20px));
-        height: calc(100dvh - 20px);
-        max-height: calc(100dvh - 20px);
-      }
-      .bft-body {
-        height: calc(100% - 40px);
-      }
-      .bft-button,
-      .bft-select {
-        min-height: 32px;
-      }
-      .bft-tool-group .bft-button {
-        flex: 1 1 calc(50% - 6px);
-      }
-    }
-    @media (min-width: 820px) {
-      .bft-main-grid {
-        grid-template-columns: minmax(290px, 1fr) minmax(260px, 1fr);
-        grid-template-rows: minmax(0, 1fr);
-        align-items: start;
-      }
-    }
-    @media (pointer: coarse) and (hover: none) and (min-width: 721px) {
-      #${panelId} {
-        left: auto;
         right: max(8px, env(safe-area-inset-right));
         top: max(8px, env(safe-area-inset-top));
-        bottom: auto;
-        width: min(700px, calc(100vw - 16px));
+        width: min(calc(100vw - 16px), clamp(380px, 38vw, 460px));
         height: calc(100dvh - 16px);
         max-height: calc(100dvh - 16px);
       }
-      .bft-header {
-        cursor: default;
-        touch-action: auto;
-      }
-      .bft-main-grid {
-        grid-template-columns: none;
-        grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr);
+      .bft-body {
+        height: calc(100% - 39px);
       }
       .bft-button,
       .bft-select {
-        min-height: 34px;
-      }
-      .bft-tool-group .bft-button {
-        flex: 1 1 calc(50% - 6px);
-      }
-      .bft-resize-handle {
-        display: none;
+        min-height: 30px;
       }
     }
   `

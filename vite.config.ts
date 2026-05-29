@@ -6,7 +6,7 @@ const rawBaseUrl = 'https://raw.githubusercontent.com/RyanChouHua/bili-fitness-t
 const userscriptBanner = `// ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.12
+// @version      0.4.13
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
