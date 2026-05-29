@@ -425,7 +425,10 @@ function savePreferences(): void {
 }
 
 function isMobileViewport(): boolean {
-  return window.matchMedia('(max-width: 720px)').matches
+  return (
+    window.matchMedia('(max-width: 720px)').matches ||
+    window.matchMedia('(pointer: coarse) and (hover: none)').matches
+  )
 }
 
 function getPanelSizeLimits(): {
@@ -1146,7 +1149,8 @@ function injectStyle(): void {
       top: 88px;
       z-index: 2147483647;
       width: min(660px, calc(100vw - 28px));
-      height: min(740px, calc(100vh - 88px));
+      height: min(740px, calc(100dvh - 88px));
+      max-height: calc(100dvh - 20px);
       color: #f6f7f9;
       background: rgba(22, 24, 29, 0.94);
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1633,10 +1637,11 @@ function injectStyle(): void {
     }
     @media (min-width: 721px) and (max-width: 1024px) {
       #${panelId} {
-        right: 12px;
-        top: 72px;
-        width: min(760px, calc(100vw - 24px));
-        height: min(780px, calc(100vh - 84px));
+        right: 10px;
+        top: 10px;
+        width: min(620px, calc(100vw - 20px));
+        height: min(82dvh, calc(100dvh - 20px));
+        max-height: calc(100dvh - 20px);
       }
       .bft-body {
         height: calc(100% - 40px);
@@ -1654,6 +1659,35 @@ function injectStyle(): void {
         grid-template-columns: minmax(290px, 1fr) minmax(260px, 1fr);
         grid-template-rows: minmax(0, 1fr);
         align-items: start;
+      }
+    }
+    @media (pointer: coarse) and (hover: none) and (min-width: 721px) {
+      #${panelId} {
+        left: auto;
+        right: max(8px, env(safe-area-inset-right));
+        top: max(8px, env(safe-area-inset-top));
+        bottom: auto;
+        width: min(520px, calc(100vw - 16px));
+        height: min(82dvh, calc(100dvh - 16px));
+        max-height: calc(100dvh - 16px);
+      }
+      .bft-header {
+        cursor: default;
+        touch-action: auto;
+      }
+      .bft-main-grid {
+        grid-template-columns: none;
+        grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr);
+      }
+      .bft-button,
+      .bft-select {
+        min-height: 34px;
+      }
+      .bft-tool-group .bft-button {
+        flex: 1 1 calc(50% - 6px);
+      }
+      .bft-resize-handle {
+        display: none;
       }
     }
   `
