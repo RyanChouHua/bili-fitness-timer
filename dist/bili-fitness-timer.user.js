@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.13
+// @version      0.4.14
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
@@ -254,6 +254,7 @@
   let settings = { ...defaultSettings };
   let collapsed = false;
   let previewLocked = true;
+  let inputCollapsed = false;
   let activeWorkTab = "groups";
   let groupPage = 0;
   let selectedStartIndex = 0;
@@ -483,7 +484,8 @@
           panelPosition: null,
           panelSize: null,
           previewLocked: true,
-          activeTab: "groups"
+          activeTab: "groups",
+          inputCollapsed: false
         };
       }
       const parsed = JSON.parse(saved);
@@ -493,7 +495,8 @@
         panelPosition: null,
         panelSize: null,
         previewLocked: booleanPreference(parsed.previewLocked, true),
-        activeTab: normalizeWorkTab(parsed.activeTab)
+        activeTab: normalizeWorkTab(parsed.activeTab),
+        inputCollapsed: booleanPreference(parsed.inputCollapsed, false)
       };
       if (position && typeof position.left === "number" && typeof position.top === "number") {
         nextPreferences.panelPosition = {
@@ -518,14 +521,16 @@
         panelPosition: null,
         panelSize: null,
         previewLocked: true,
-        activeTab: "groups"
+        activeTab: "groups",
+        inputCollapsed: false
       };
     }
     return {
       panelPosition: null,
       panelSize: null,
       previewLocked: true,
-      activeTab: "groups"
+      activeTab: "groups",
+      inputCollapsed: false
     };
   }
   function savePreferences() {
@@ -535,7 +540,8 @@
         panelPosition,
         panelSize,
         previewLocked,
-        activeTab: activeWorkTab
+        activeTab: activeWorkTab,
+        inputCollapsed
       })
     );
   }
@@ -1291,8 +1297,24 @@
     }
     .bft-left-input {
       display: grid;
-      gap: 7px;
-      padding-top: 2px;
+      gap: 6px;
+      padding: 7px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .bft-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-width: 0;
+    }
+    .bft-section-header strong {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .bft-tool-label {
       font-size: 11px;
@@ -1342,8 +1364,8 @@
     }
     .bft-complete-button {
       width: 100%;
-      min-height: 42px;
-      font-size: 14px;
+      min-height: 54px;
+      font-size: 16px;
       letter-spacing: 0;
     }
     .bft-muted {
@@ -1615,8 +1637,8 @@
         font-size: 12px;
       }
       .bft-complete-button {
-        min-height: 48px;
-        font-size: 15px;
+        min-height: 56px;
+        font-size: 16px;
       }
       .bft-tool-group .bft-button {
         flex: 1 1 calc(50% - 6px);
@@ -2165,9 +2187,20 @@
     }
     const inputPanel = document.createElement("div");
     inputPanel.className = "bft-left-input";
+    const inputHeader = document.createElement("div");
+    inputHeader.className = "bft-section-header";
     const inputTitle = document.createElement("strong");
     inputTitle.textContent = "时间戳录入";
-    inputPanel.append(inputTitle, ...inputChildren);
+    const inputToggleButton = createButton(inputCollapsed ? "展开" : "折叠", () => {
+      inputCollapsed = !inputCollapsed;
+      savePreferences();
+      render();
+    });
+    inputHeader.append(inputTitle, inputToggleButton);
+    inputPanel.append(inputHeader);
+    if (!inputCollapsed) {
+      inputPanel.append(...inputChildren);
+    }
     controlStack.append(status, startPickerRow, controls, completeRow, inputPanel);
     const mainGrid = document.createElement("div");
     mainGrid.className = "bft-main-grid";
@@ -2291,6 +2324,7 @@
       applyPlanGroup(plan, planGroups);
       previewLocked = preferences.previewLocked;
       activeWorkTab = preferences.activeTab;
+      inputCollapsed = preferences.inputCollapsed;
       panelPosition = preferences.panelPosition;
       panelSize = preferences.panelSize;
       video = nextVideo;

@@ -66,6 +66,7 @@ interface Preferences {
   panelSize: PanelSize | null
   previewLocked: boolean
   activeTab: WorkTab
+  inputCollapsed: boolean
 }
 
 const panelId = 'bili-fitness-timer-panel'
@@ -83,6 +84,7 @@ let rawInput = ''
 let settings: Settings = { ...defaultSettings }
 let collapsed = false
 let previewLocked = true
+let inputCollapsed = false
 let activeWorkTab: WorkTab = 'groups'
 let groupPage = 0
 let selectedStartIndex = 0
@@ -361,6 +363,7 @@ function loadPreferences(): Preferences {
         panelSize: null,
         previewLocked: true,
         activeTab: 'groups',
+        inputCollapsed: false,
       }
     }
 
@@ -372,6 +375,7 @@ function loadPreferences(): Preferences {
       panelSize: null,
       previewLocked: booleanPreference(parsed.previewLocked, true),
       activeTab: normalizeWorkTab(parsed.activeTab),
+      inputCollapsed: booleanPreference(parsed.inputCollapsed, false),
     }
     if (
       position &&
@@ -406,6 +410,7 @@ function loadPreferences(): Preferences {
       panelSize: null,
       previewLocked: true,
       activeTab: 'groups',
+      inputCollapsed: false,
     }
   }
 
@@ -414,6 +419,7 @@ function loadPreferences(): Preferences {
     panelSize: null,
     previewLocked: true,
     activeTab: 'groups',
+    inputCollapsed: false,
   }
 }
 
@@ -425,6 +431,7 @@ function savePreferences(): void {
       panelSize,
       previewLocked,
       activeTab: activeWorkTab,
+      inputCollapsed,
     } satisfies Preferences),
   )
 }
@@ -1281,8 +1288,24 @@ function injectStyle(): void {
     }
     .bft-left-input {
       display: grid;
-      gap: 7px;
-      padding-top: 2px;
+      gap: 6px;
+      padding: 7px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .bft-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-width: 0;
+    }
+    .bft-section-header strong {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .bft-tool-label {
       font-size: 11px;
@@ -1332,8 +1355,8 @@ function injectStyle(): void {
     }
     .bft-complete-button {
       width: 100%;
-      min-height: 42px;
-      font-size: 14px;
+      min-height: 54px;
+      font-size: 16px;
       letter-spacing: 0;
     }
     .bft-muted {
@@ -1605,8 +1628,8 @@ function injectStyle(): void {
         font-size: 12px;
       }
       .bft-complete-button {
-        min-height: 48px;
-        font-size: 15px;
+        min-height: 56px;
+        font-size: 16px;
       }
       .bft-tool-group .bft-button {
         flex: 1 1 calc(50% - 6px);
@@ -2209,9 +2232,20 @@ function render(options: RenderOptions = {}): void {
 
   const inputPanel = document.createElement('div')
   inputPanel.className = 'bft-left-input'
+  const inputHeader = document.createElement('div')
+  inputHeader.className = 'bft-section-header'
   const inputTitle = document.createElement('strong')
   inputTitle.textContent = '时间戳录入'
-  inputPanel.append(inputTitle, ...inputChildren)
+  const inputToggleButton = createButton(inputCollapsed ? '展开' : '折叠', () => {
+    inputCollapsed = !inputCollapsed
+    savePreferences()
+    render()
+  })
+  inputHeader.append(inputTitle, inputToggleButton)
+  inputPanel.append(inputHeader)
+  if (!inputCollapsed) {
+    inputPanel.append(...inputChildren)
+  }
 
   controlStack.append(status, startPickerRow, controls, completeRow, inputPanel)
 
@@ -2350,6 +2384,7 @@ async function init(): Promise<void> {
     applyPlanGroup(plan, planGroups)
     previewLocked = preferences.previewLocked
     activeWorkTab = preferences.activeTab
+    inputCollapsed = preferences.inputCollapsed
     panelPosition = preferences.panelPosition
     panelSize = preferences.panelSize
     video = nextVideo
