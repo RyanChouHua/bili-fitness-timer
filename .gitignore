@@ -12,6 +12,7 @@ dist/*
 
 # Local notes and agent-only drafts
 maintenance-local/
+pic/
 AGENTS.md
 AGENTS.local.md
 CLAUDE.md

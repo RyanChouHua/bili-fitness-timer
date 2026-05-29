@@ -1146,11 +1146,11 @@ function injectStyle(): void {
     #${panelId} {
       position: fixed;
       right: 14px;
-      top: 88px;
+      top: 32px;
       z-index: 2147483647;
-      width: min(660px, calc(100vw - 28px));
-      height: min(740px, calc(100dvh - 88px));
-      max-height: calc(100dvh - 20px);
+      width: min(950px, calc(100vw - 28px));
+      height: min(740px, calc(100dvh - 44px));
+      max-height: calc(100dvh - 16px);
       color: #f6f7f9;
       background: rgba(22, 24, 29, 0.94);
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1639,8 +1639,8 @@ function injectStyle(): void {
       #${panelId} {
         right: 10px;
         top: 10px;
-        width: min(620px, calc(100vw - 20px));
-        height: min(82dvh, calc(100dvh - 20px));
+        width: min(700px, calc(100vw - 20px));
+        height: calc(100dvh - 20px);
         max-height: calc(100dvh - 20px);
       }
       .bft-body {
@@ -1667,8 +1667,8 @@ function injectStyle(): void {
         right: max(8px, env(safe-area-inset-right));
         top: max(8px, env(safe-area-inset-top));
         bottom: auto;
-        width: min(520px, calc(100vw - 16px));
-        height: min(82dvh, calc(100dvh - 16px));
+        width: min(700px, calc(100vw - 16px));
+        height: calc(100dvh - 16px);
         max-height: calc(100dvh - 16px);
       }
       .bft-header {
