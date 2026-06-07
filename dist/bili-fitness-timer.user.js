@@ -1169,16 +1169,17 @@
       right: 10px;
       top: 10px;
       z-index: 2147483647;
-      width: min(calc(100vw - 20px), clamp(390px, 36vw, 520px));
-      height: min(760px, calc(100dvh - 20px));
+      width: min(calc(100vw - 20px), clamp(430px, 44vw, 720px));
+      height: min(780px, calc(100dvh - 20px));
       max-height: calc(100dvh - 20px);
-      color: #f6f7f9;
-      background: rgba(22, 24, 29, 0.94);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #f7f8fb;
+      background: linear-gradient(180deg, rgba(31, 34, 40, 0.98), rgba(17, 19, 23, 0.97));
+      border: 1px solid rgba(255, 255, 255, 0.14);
       border-radius: 8px;
-      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.34);
+      box-shadow: 0 18px 54px rgba(0, 0, 0, 0.42);
       font: 12.5px/1.42 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       overflow: hidden;
+      container-type: inline-size;
     }
     #${panelId} * {
       box-sizing: border-box;
@@ -1193,9 +1194,10 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 6px;
-      padding: 7px 9px;
-      background: rgba(255, 255, 255, 0.06);
+      gap: 10px;
+      min-height: 52px;
+      padding: 9px 11px;
+      background: rgba(255, 255, 255, 0.08);
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       cursor: grab;
       user-select: none;
@@ -1208,10 +1210,47 @@
       font-weight: 700;
       letter-spacing: 0;
     }
+    .bft-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .bft-brand-mark {
+      display: inline-grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      flex: 0 0 auto;
+      color: #07120f;
+      background: linear-gradient(135deg, #00aeec, #55d6aa);
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .bft-title-stack {
+      display: grid;
+      gap: 1px;
+      min-width: 0;
+    }
+    .bft-subtitle {
+      min-width: 0;
+      color: rgba(247, 248, 251, 0.62);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bft-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+    }
     .bft-body {
       display: block;
-      padding: 8px;
-      height: calc(100% - 39px);
+      padding: 10px;
+      height: calc(100% - 52px);
       overflow-x: hidden;
       overflow-y: auto;
       scrollbar-width: thin;
@@ -1224,9 +1263,13 @@
       height: auto !important;
       min-width: 96px;
     }
+    .bft-collapsed .bft-brand-mark,
+    .bft-collapsed .bft-subtitle {
+      display: none;
+    }
     .bft-control-stack {
       display: grid;
-      gap: 6px;
+      gap: 8px;
       z-index: 1;
       padding-bottom: 2px;
       min-height: 0;
@@ -1234,7 +1277,8 @@
     }
     .bft-main-grid {
       display: grid;
-      gap: 8px;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
       align-content: start;
       height: auto;
       min-height: 0;
@@ -1256,15 +1300,80 @@
     }
     .bft-status {
       display: grid;
-      gap: 3px;
+      gap: 8px;
+      padding: 10px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.06));
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+    }
+    .bft-status-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+    .bft-status-title {
+      min-width: 0;
+      font-size: 20px;
+      line-height: 1.12;
+      overflow-wrap: anywhere;
+    }
+    .bft-status-detail {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .bft-save-pill {
+      flex: 0 0 auto;
+      max-width: 45%;
+      padding: 3px 7px;
+      color: #c8f7ea;
+      border: 1px solid rgba(85, 214, 170, 0.34);
+      border-radius: 999px;
+      background: rgba(85, 214, 170, 0.12);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bft-metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .bft-metric {
+      display: grid;
+      gap: 1px;
+      min-width: 0;
       padding: 6px 7px;
-      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 6px;
+      background: rgba(0, 0, 0, 0.16);
+    }
+    .bft-metric span {
+      min-width: 0;
+      color: rgba(247, 248, 251, 0.58);
+      font-size: 10.5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bft-metric strong {
+      min-width: 0;
+      font-size: 13px;
+      line-height: 1.22;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .bft-tabs {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 4px;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.18);
     }
     .bft-tab {
       min-width: 0;
@@ -1272,36 +1381,41 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      border-color: transparent;
+      background: transparent;
     }
     .bft-tab-active {
       color: #07120f;
-      background: #4cc9a7;
-      border-color: #4cc9a7;
+      background: #55d6aa;
+      border-color: #55d6aa;
       font-weight: 700;
     }
     .bft-work-panel {
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: 6px;
+      gap: 8px;
       min-height: 0;
       overflow: visible;
-      padding-right: 2px;
+      padding: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.055);
     }
     .bft-tool-group {
       display: grid;
-      gap: 4px;
+      gap: 5px;
     }
     .bft-tool-group .bft-button {
       flex: 1 1 0;
     }
     .bft-left-input {
       display: grid;
-      gap: 6px;
-      padding: 7px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.05);
+      gap: 8px;
+      padding: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.055);
     }
     .bft-section-header {
       display: flex;
@@ -1320,12 +1434,35 @@
       font-size: 11px;
       color: rgba(246, 247, 249, 0.58);
     }
+    .bft-panel-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+    .bft-heading-copy {
+      display: grid;
+      gap: 1px;
+      min-width: 0;
+    }
+    .bft-heading-copy strong,
+    .bft-heading-copy span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bft-heading-copy strong {
+      font-size: 13px;
+    }
     .bft-group-summary {
       display: grid;
       gap: 2px;
-      padding: 6px 7px;
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.06);
+      padding: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.16);
       min-width: 0;
     }
     .bft-group-summary strong,
@@ -1364,12 +1501,12 @@
     }
     .bft-complete-button {
       width: 100%;
-      min-height: 72px;
-      font-size: 18px;
+      min-height: 76px;
+      font-size: 19px;
       letter-spacing: 0;
     }
     .bft-muted {
-      color: rgba(246, 247, 249, 0.68);
+      color: rgba(247, 248, 251, 0.68);
     }
     .bft-row {
       display: flex;
@@ -1387,7 +1524,7 @@
       width: 100%;
       min-height: 98px;
       resize: vertical;
-      color: #f6f7f9;
+      color: #f7f8fb;
       background: rgba(0, 0, 0, 0.24);
       border: 1px solid rgba(255, 255, 255, 0.16);
       border-radius: 6px;
@@ -1401,7 +1538,7 @@
       width: 100%;
       min-width: 0;
       min-height: 28px;
-      color: #f6f7f9;
+      color: #f7f8fb;
       background: rgba(0, 0, 0, 0.24);
       border: 1px solid rgba(255, 255, 255, 0.16);
       border-radius: 6px;
@@ -1414,20 +1551,24 @@
     .bft-input:focus,
     .bft-text-input:focus,
     .bft-select:focus {
-      border-color: #4cc9a7;
+      border-color: #00aeec;
     }
     .bft-button {
       min-height: 26px;
       border: 1px solid rgba(255, 255, 255, 0.14);
       border-radius: 6px;
-      color: #f6f7f9;
+      color: #f7f8fb;
       background: rgba(255, 255, 255, 0.1);
       padding: 3px 7px;
       cursor: pointer;
       font-size: 12px;
+      transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
     }
     .bft-button:hover {
       background: rgba(255, 255, 255, 0.16);
+    }
+    .bft-button:active:not(:disabled) {
+      transform: translateY(1px);
     }
     .bft-button:disabled {
       opacity: 0.45;
@@ -1435,12 +1576,12 @@
     }
     .bft-primary {
       color: #07120f;
-      background: #4cc9a7;
-      border-color: #4cc9a7;
+      background: #55d6aa;
+      border-color: #55d6aa;
       font-weight: 700;
     }
     .bft-primary:hover {
-      background: #6dd8ba;
+      background: #72e0bb;
     }
     .bft-danger {
       color: #ffd9d9;
@@ -1449,7 +1590,7 @@
     }
     .bft-select {
       min-height: 28px;
-      color: #f6f7f9;
+      color: #f7f8fb;
       background: rgba(0, 0, 0, 0.24);
       border: 1px solid rgba(255, 255, 255, 0.16);
       border-radius: 6px;
@@ -1467,15 +1608,15 @@
     }
     .bft-list {
       display: grid;
-      gap: 5px;
+      gap: 6px;
       margin: 0;
       padding: 0;
       list-style: none;
     }
     .bft-manager-list {
       display: grid;
-      gap: 3px;
-      max-height: 138px;
+      gap: 6px;
+      max-height: 180px;
       overflow-y: auto;
       padding-right: 2px;
       scrollbar-width: thin;
@@ -1484,15 +1625,15 @@
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
-      gap: 5px;
-      padding: 4px 5px;
+      gap: 7px;
+      padding: 7px;
       border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 6px;
+      border-radius: 8px;
       background: rgba(255, 255, 255, 0.05);
     }
     .bft-manager-active {
-      border-color: rgba(76, 201, 167, 0.85);
-      background: rgba(76, 201, 167, 0.12);
+      border-color: rgba(85, 214, 170, 0.85);
+      background: rgba(85, 214, 170, 0.12);
     }
     .bft-manager-content {
       display: grid;
@@ -1546,25 +1687,25 @@
       color: inherit;
       text-align: left;
       cursor: pointer;
-      padding: 5px 7px;
+      padding: 8px;
       border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 6px;
+      border-radius: 8px;
       background: rgba(255, 255, 255, 0.05);
     }
     .bft-item:hover {
       background: rgba(255, 255, 255, 0.09);
     }
     .bft-item-active {
-      border-color: rgba(76, 201, 167, 0.85);
-      background: rgba(76, 201, 167, 0.12);
+      border-color: rgba(85, 214, 170, 0.85);
+      background: rgba(85, 214, 170, 0.12);
     }
     .bft-item-selected {
-      border-color: rgba(255, 213, 97, 0.78);
+      border-color: rgba(0, 174, 236, 0.88);
     }
     .bft-empty {
       padding: 7px;
-      color: rgba(246, 247, 249, 0.64);
-      border-radius: 6px;
+      color: rgba(247, 248, 251, 0.64);
+      border-radius: 8px;
       background: rgba(255, 255, 255, 0.05);
     }
     .bft-error {
@@ -1592,8 +1733,8 @@
       bottom: 5px;
       width: 9px;
       height: 9px;
-      border-right: 2px solid rgba(246, 247, 249, 0.52);
-      border-bottom: 2px solid rgba(246, 247, 249, 0.52);
+      border-right: 2px solid rgba(247, 248, 251, 0.52);
+      border-bottom: 2px solid rgba(247, 248, 251, 0.52);
     }
     .bft-resizing,
     .bft-resizing * {
@@ -1618,7 +1759,7 @@
       }
       .bft-body {
         padding: 8px;
-        height: calc(100% - 42px);
+        height: calc(100% - 52px);
       }
       .bft-input {
         min-height: 104px;
@@ -1676,16 +1817,34 @@
       #${panelId} {
         right: max(8px, env(safe-area-inset-right));
         top: max(8px, env(safe-area-inset-top));
-        width: min(calc(100vw - 16px), clamp(380px, 38vw, 460px));
+        width: min(calc(100vw - 16px), clamp(410px, 42vw, 620px));
         height: calc(100dvh - 16px);
         max-height: calc(100dvh - 16px);
       }
       .bft-body {
-        height: calc(100% - 39px);
+        height: calc(100% - 52px);
       }
       .bft-button,
       .bft-select {
         min-height: 30px;
+      }
+    }
+    @container (min-width: 620px) {
+      .bft-main-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(240px, 0.86fr);
+        align-items: start;
+      }
+      .bft-main-right {
+        position: sticky;
+        top: 0;
+      }
+    }
+    @container (max-width: 430px) {
+      .bft-metric-grid {
+        grid-template-columns: 1fr;
+      }
+      .bft-save-pill {
+        max-width: 38%;
       }
     }
   `;
@@ -1696,8 +1855,36 @@
     button.type = "button";
     button.className = `bft-button ${className}`.trim();
     button.textContent = label;
+    button.title = label;
     button.addEventListener("click", onClick);
     return button;
+  }
+  function createMetric(labelText, valueText) {
+    const metric = document.createElement("div");
+    metric.className = "bft-metric";
+    const label = document.createElement("span");
+    label.textContent = labelText;
+    const value = document.createElement("strong");
+    value.textContent = valueText;
+    metric.append(label, value);
+    return metric;
+  }
+  function createPanelHeading(titleText, detailText, action) {
+    const heading = document.createElement("div");
+    heading.className = "bft-panel-heading";
+    const copy = document.createElement("div");
+    copy.className = "bft-heading-copy";
+    const title = document.createElement("strong");
+    title.textContent = titleText;
+    const detail = document.createElement("span");
+    detail.className = "bft-muted";
+    detail.textContent = detailText;
+    copy.append(title, detail);
+    heading.append(copy);
+    if (action) {
+      heading.append(action);
+    }
+    return heading;
   }
   function createTabBar() {
     const tabs = document.createElement("div");
@@ -1744,7 +1931,7 @@
     label.className = "bft-tool-label";
     label.textContent = labelText;
     const buttonRow = document.createElement("div");
-    buttonRow.className = "bft-row";
+    buttonRow.className = "bft-row bft-tool-row";
     buttonRow.append(...buttons);
     group.append(label, buttonRow);
     return group;
@@ -1924,7 +2111,7 @@
   }
   function createSettingsPanel() {
     const panel = document.createElement("div");
-    panel.className = "bft-work-panel";
+    panel.className = "bft-tool-group";
     const settingsRow = document.createElement("div");
     settingsRow.className = "bft-row";
     const beepLabel = document.createElement("label");
@@ -1956,7 +2143,10 @@
     });
     pauseLabel.append(pauseInput, document.createTextNode("休息暂停视频"));
     settingsRow.append(beepLabel, pauseLabel);
-    panel.append(settingsRow);
+    panel.append(
+      createPanelHeading("训练设置", "提示音和休息时视频行为"),
+      settingsRow
+    );
     return panel;
   }
   function createWorkPanel(parseResult, list) {
@@ -1964,6 +2154,7 @@
     panel.className = "bft-work-panel";
     if (activeWorkTab === "groups") {
       panel.append(
+        createPanelHeading("计划分组", `${planGroups.length} 个子分组`),
         createGroupActions(),
         createManagerList(),
         createGroupPager(),
@@ -1973,16 +2164,19 @@
       return panel;
     }
     if (activeWorkTab === "preview") {
-      const lockRow = document.createElement("div");
-      lockRow.className = "bft-row";
-      lockRow.append(
-        createButton(previewLocked ? "解锁预览" : "锁定预览", () => {
-          previewLocked = !previewLocked;
-          savePreferences();
-          render();
-        })
+      const lockButton = createButton(previewLocked ? "解锁预览" : "锁定预览", () => {
+        previewLocked = !previewLocked;
+        savePreferences();
+        render();
+      });
+      panel.append(
+        createPanelHeading(
+          "动作预览",
+          previewLocked ? "训练中锁定切换" : "训练中可切换动作",
+          lockButton
+        ),
+        list
       );
-      panel.append(lockRow, list);
       return panel;
     }
     panel.append(createSettingsPanel());
@@ -2020,14 +2214,29 @@
     panel.replaceChildren();
     const header = document.createElement("div");
     header.className = "bft-header";
+    const brand = document.createElement("div");
+    brand.className = "bft-brand";
+    const brandMark = document.createElement("div");
+    brandMark.className = "bft-brand-mark";
+    brandMark.textContent = "BF";
+    const titleStack = document.createElement("div");
+    titleStack.className = "bft-title-stack";
     const title = document.createElement("div");
     title.className = "bft-title";
     title.textContent = "健身计时器";
+    const subtitle = document.createElement("div");
+    subtitle.className = "bft-subtitle";
+    subtitle.textContent = activePlanTitle || getCurrentStorageId();
+    titleStack.append(title, subtitle);
+    brand.append(brandMark, titleStack);
     const collapseButton = createButton(collapsed ? "展开" : "收起", () => {
       collapsed = !collapsed;
       render();
     });
-    header.append(title, collapseButton);
+    const headerActions = document.createElement("div");
+    headerActions.className = "bft-header-actions";
+    headerActions.append(collapseButton);
+    header.append(brand, headerActions);
     setupPanelDrag(header, panel);
     const body = document.createElement("div");
     body.className = "bft-body";
@@ -2040,15 +2249,26 @@
     const status = document.createElement("div");
     status.className = "bft-status";
     const current = getCurrentExercise();
+    const statusHead = document.createElement("div");
+    statusHead.className = "bft-status-head";
     const statusTitle = document.createElement("strong");
+    statusTitle.className = "bft-status-title";
     statusTitle.textContent = getStatusText();
-    const statusDetail = document.createElement("span");
-    statusDetail.className = "bft-muted";
-    statusDetail.textContent = current ? `${current.name} · ${formatTimestamp(current.start)}-${formatTimestamp(current.end)} · ${current.minReps}${current.maxReps === current.minReps ? "" : `-${current.maxReps}`} 次` : `${exercises.length} 个动作`;
     const saveStatus = document.createElement("span");
-    saveStatus.className = "bft-muted";
+    saveStatus.className = "bft-save-pill";
     saveStatus.textContent = saveStatusText;
-    status.append(statusTitle, statusDetail, saveStatus);
+    statusHead.append(statusTitle, saveStatus);
+    const statusDetail = document.createElement("span");
+    statusDetail.className = "bft-muted bft-status-detail";
+    statusDetail.textContent = current ? `${current.name} · ${formatTimestamp(current.start)}-${formatTimestamp(current.end)} · ${current.minReps}${current.maxReps === current.minReps ? "" : `-${current.maxReps}`} 次` : `${exercises.length} 个动作`;
+    const metricGrid = document.createElement("div");
+    metricGrid.className = "bft-metric-grid";
+    metricGrid.append(
+      createMetric("动作", `${exercises.length}`),
+      createMetric("当前", current ? `${runtime.exerciseIndex + 1}/${exercises.length}` : "-"),
+      createMetric("休息", current ? `${current.restSeconds}s` : `${settings.beepDuration}s`)
+    );
+    status.append(statusHead, statusDetail, metricGrid);
     const textarea = document.createElement("textarea");
     textarea.className = "bft-input";
     textarea.wrap = "off";
