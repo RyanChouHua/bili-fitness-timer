@@ -12,7 +12,9 @@ dist/*
 
 # Local notes and agent-only drafts
 maintenance-local/
-pic/
+!pic/
+pic/*
+!pic/tablet-training-controls.png
 AGENTS.md
 AGENTS.local.md
 CLAUDE.md
@@ -31,6 +33,7 @@ agent工作流程*.md
 .tmp/
 tmp/
 temp/
+test-results/
 *.log
 *.local
 .DS_Store

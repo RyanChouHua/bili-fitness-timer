@@ -1040,6 +1040,27 @@ function togglePause(): void {
   render()
 }
 
+function resetTraining(): void {
+  if (
+    runtime.mode !== 'idle' &&
+    runtime.mode !== 'complete' &&
+    !window.confirm('确认重置当前训练进度？')
+  ) {
+    return
+  }
+
+  clearRestTimer()
+  runtime = {
+    mode: 'idle',
+    exerciseIndex: selectedStartIndex,
+    setIndex: 0,
+    restRemaining: 0,
+    beforePauseMode: 'idle',
+  }
+  video?.pause()
+  render()
+}
+
 function switchToExercise(index: number): void {
   const exercise = exercises[index]
   if (!exercise) {
@@ -1484,17 +1505,46 @@ function injectStyle(): void {
       font-size: 11px;
       color: rgba(246, 247, 249, 0.58);
     }
-    .bft-control-row .bft-button {
-      flex: 1 1 calc(50% - 6px);
+    .bft-primary-action-row {
+      display: flex;
+      justify-content: center;
     }
-    .bft-complete-row {
-      display: grid;
-    }
-    .bft-complete-button {
-      width: 100%;
-      min-height: 76px;
-      font-size: 19px;
+    .bft-primary-training-button {
+      width: min(100%, 360px);
+      min-height: 70px;
+      font-size: 18px;
       letter-spacing: 0;
+    }
+    .bft-resting-button:disabled {
+      opacity: 0.78;
+      cursor: default;
+      color: #f7f8fb;
+      border-color: rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.11);
+    }
+    .bft-control-row {
+      justify-content: center;
+    }
+    .bft-control-row .bft-button {
+      flex: 0 1 168px;
+      min-width: 112px;
+    }
+    .bft-safety-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px;
+      min-width: 0;
+    }
+    .bft-safety-row .bft-tool-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bft-reset-button {
+      flex: 0 0 auto;
+      min-width: 92px;
     }
     .bft-muted {
       color: rgba(247, 248, 251, 0.68);
@@ -1762,15 +1812,20 @@ function injectStyle(): void {
       .bft-select {
         min-height: 32px;
       }
-      .bft-tool-row .bft-button,
-      .bft-control-row .bft-button {
+      .bft-tool-row .bft-button {
         flex: 1 1 calc(50% - 6px);
         padding: 5px 6px;
         font-size: 12px;
       }
-      .bft-complete-button {
-        min-height: 76px;
+      .bft-primary-training-button {
+        width: 100%;
+        min-height: 74px;
         font-size: 18px;
+      }
+      .bft-control-row .bft-button {
+        flex: 1 1 calc(50% - 6px);
+        padding: 5px 6px;
+        font-size: 12px;
       }
       .bft-tool-group .bft-button {
         flex: 1 1 calc(50% - 6px);
@@ -2375,33 +2430,56 @@ function render(options: RenderOptions = {}): void {
   startPickerLabel.append(startPickerText, startPicker)
   startPickerRow.append(startPickerLabel)
 
+  let primaryTrainingLabel = '开始训练'
+  let primaryTrainingAction = startTraining
+  let primaryTrainingDisabled = exercises.length === 0
+  let primaryTrainingClass = 'bft-primary'
+  if (runtime.mode === 'exercise') {
+    primaryTrainingLabel = '完成本组'
+    primaryTrainingAction = completeSet
+    primaryTrainingDisabled = false
+  } else if (runtime.mode === 'paused') {
+    primaryTrainingLabel = '继续'
+    primaryTrainingAction = togglePause
+    primaryTrainingDisabled = false
+  } else if (runtime.mode === 'rest') {
+    primaryTrainingLabel = `休息 ${runtime.restRemaining}s`
+    primaryTrainingAction = () => {}
+    primaryTrainingDisabled = true
+    primaryTrainingClass = 'bft-resting-button'
+  }
+  const primaryActionRow = document.createElement('div')
+  primaryActionRow.className = 'bft-primary-action-row'
+  const primaryTrainingButton = createButton(
+    primaryTrainingLabel,
+    primaryTrainingAction,
+    primaryTrainingClass,
+  )
+  primaryTrainingButton.classList.add('bft-primary-training-button')
+  primaryTrainingButton.disabled = primaryTrainingDisabled
+  primaryActionRow.append(primaryTrainingButton)
+
   const controls = document.createElement('div')
   controls.className = 'bft-row bft-control-row'
-  const startButton = createButton('开始训练', startTraining, 'bft-primary')
-  startButton.disabled = exercises.length === 0
-  const completeButton = createButton('完成本组', completeSet, 'bft-primary')
-  completeButton.classList.add('bft-complete-button')
-  completeButton.disabled = runtime.mode !== 'exercise'
   const skipButton = createButton('跳过休息', () => skipRest(false))
   skipButton.disabled = runtime.mode !== 'rest'
-  const pauseButton = createButton(runtime.mode === 'paused' ? '继续' : '暂停', togglePause)
-  pauseButton.disabled = runtime.mode === 'idle' || runtime.mode === 'complete'
-  const resetButton = createButton('重置', () => {
-    clearRestTimer()
-    runtime = {
-      mode: 'idle',
-      exerciseIndex: selectedStartIndex,
-      setIndex: 0,
-      restRemaining: 0,
-      beforePauseMode: 'idle',
-    }
-    video?.pause()
-    render()
-  }, 'bft-danger')
-  controls.append(startButton, skipButton, pauseButton, resetButton)
-  const completeRow = document.createElement('div')
-  completeRow.className = 'bft-complete-row'
-  completeRow.append(completeButton)
+  const pauseButton = createButton('暂停', togglePause)
+  pauseButton.disabled = runtime.mode !== 'exercise' && runtime.mode !== 'rest'
+  controls.append(pauseButton, skipButton)
+
+  const safetyRow = document.createElement('div')
+  safetyRow.className = 'bft-safety-row'
+  const safetyLabel = document.createElement('span')
+  safetyLabel.className = 'bft-tool-label'
+  safetyLabel.textContent = '安全操作'
+  const resetButton = createButton('重置训练', resetTraining, 'bft-danger')
+  resetButton.classList.add('bft-reset-button')
+  resetButton.disabled =
+    runtime.mode === 'idle' &&
+    runtime.exerciseIndex === selectedStartIndex &&
+    runtime.setIndex === 0 &&
+    runtime.restRemaining === 0
+  safetyRow.append(safetyLabel, resetButton)
 
   const list = document.createElement('ul')
   list.className = 'bft-list'
@@ -2469,7 +2547,7 @@ function render(options: RenderOptions = {}): void {
     inputPanel.append(...inputChildren)
   }
 
-  controlStack.append(status, startPickerRow, controls, completeRow, inputPanel)
+  controlStack.append(status, startPickerRow, primaryActionRow, controls, safetyRow, inputPanel)
 
   const mainGrid = document.createElement('div')
   mainGrid.className = 'bft-main-grid'

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.16
+// @version      0.4.17
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*

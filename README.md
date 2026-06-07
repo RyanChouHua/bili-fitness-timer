@@ -24,8 +24,9 @@ https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-
 ```
 
 - 支持从当前视频时间插入开始/结束时间。
-- 动作片段循环播放；点击“完成本组”后进入休息倒计时。
-- “完成本组”是独立大按钮，训练中更适合触控。
+- 动作片段循环播放；训练主操作按钮会随状态显示“开始训练”“完成本组”或“继续”。
+- “完成本组”使用居中的独立主按钮，平板触控时不会和上方控制行等宽，降低误触概率。
+- “重置训练”独立放在安全操作区，训练中点击需要二次确认。
 - 休息结束播放 Web Audio 提示音，支持 `1s / 2s / 3s / 5s`。
 - 支持选择从某个动作开始训练。
 - 支持本地 JSON 导入/导出，保留当前 BV 视频分组下的全部子分组、标题、作者和备注。
@@ -38,6 +39,10 @@ https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main/dist/bili-
 - 安卓平板、Via 等触控浏览器在 PC 模式下会使用接近平板效果图的单列触控布局，并用动态视口高度限制面板高度。
 - 动作预览支持锁定/解锁，解锁后训练中可直接切换动作。
 - PC 使用紧凑悬浮面板，平板和手机浏览器有响应式布局。
+
+## 效果图
+
+![平板训练控制布局](pic/tablet-training-controls.png)
 
 ## 在线时间戳
 
@@ -81,6 +86,7 @@ npm install
 npm run test
 npm run typecheck
 npm run build
+npm run screenshot:tablet
 ```
 
 构建产物：
@@ -92,13 +98,74 @@ dist/bili-fitness-timer.user.js
 `dist/bili-fitness-timer.user.js` 需要提交到 Git，因为它是 GitHub raw 安装和 Tampermonkey 自动更新入口。
 `dist/bili-fitness-timer.meta.js` 也需要提交到 Git，因为 Tampermonkey 用它检查更新版本。
 
+## Git / GitHub 维护
+
+版本发布建议按下面顺序操作：
+
+```bash
+git status --short
+npm version <新版本号> --no-git-tag-version
+npm run test
+npm run typecheck
+npm run build
+npm run screenshot:tablet
+git diff
+git add package.json package-lock.json vite.config.ts src/main.ts README.md scripts/screenshot-tablet.mjs dist/bili-fitness-timer.user.js dist/bili-fitness-timer.meta.js pic/tablet-training-controls.png
+git commit -m "Release <新版本号>"
+git push origin main
+```
+
+注意事项：
+
+- `package.json` / `package-lock.json` 的 `version`、`vite.config.ts` 里的 userscript `@version` 要保持一致。
+- 每次改动脚本后都要重新执行 `npm run build`，并提交 `dist/bili-fitness-timer.user.js` 与 `dist/bili-fitness-timer.meta.js`。
+- GitHub raw 安装地址依赖 `main` 分支上的 `dist/`，push 后 Tampermonkey 才能检查到新版本。
+- 提交前先看 `git status --short` 和 `git diff`，不要把本地草稿、账号信息、token 或无关文件带进提交。
+- 需要在 GitHub 管理问题时优先使用 issue / PR 记录复现、修复和验证；不要在未确认前删除分支、关闭 issue 或改 protected branch。
+
+## Playwright 验证
+
+平板效果图由 Playwright 脚本生成：
+
+```bash
+npm run screenshot:tablet
+```
+
+如果使用便携浏览器，可显式指定路径：
+
+```powershell
+$env:CHROME_PATH='C:\A_Program\portable_apps\Browse\Chrome\App\chrome.exe'
+npm run screenshot:tablet
+```
+
+注意事项：
+
+- 脚本会优先尝试 `CHROME_PATH`，如果便携 Chrome 不兼容 Playwright 启动方式，会自动尝试常见 Chrome / Edge 路径。
+- 截图前先执行 `npm run build`，确保截图使用的是最新 `dist/bili-fitness-timer.user.js`。
+- 生成结果固定写入 `pic/tablet-training-controls.png`，README 会直接引用这张图。
+- 如果用 MCP Playwright 调浏览器，注意它可能固定寻找默认 Chrome 路径；便携 Chrome 在 `remote-debugging-pipe` 模式下可能会启动后立即退出，此时优先使用 `npm run screenshot:tablet`。
+
+## 版本记录
+
+### 0.4.17
+
+- 优化平板触控训练控制区：主操作固定为居中大按钮，训练中显示“完成本组”。
+- 将“暂停”“跳过休息”作为次要控制，将“重置训练”移到安全操作区。
+- 训练中执行“重置训练”需要二次确认，避免误触清空当前进度。
+- 补充平板控制区效果图，便于 GitHub README 预览。
+
 ## 发布
+
+常规发布优先按上面的 Git / GitHub 维护流程执行。最小命令示例：
 
 ```bash
 npm run test
 npm run typecheck
 npm run build
-git add .
+npm run screenshot:tablet
+git status --short
+# 只添加本次相关文件，例如：
+git add README.md src/main.ts dist/bili-fitness-timer.user.js dist/bili-fitness-timer.meta.js
 git commit -m "Release userscript"
-git push
+git push origin main
 ```

@@ -1,6 +1,6 @@
 {
   "name": "bili-fitness-timer",
-  "version": "0.4.16",
+  "version": "0.4.17",
   "private": true,
   "license": "MIT",
   "homepage": "https://github.com/RyanChouHua/bili-fitness-timer#readme",
@@ -15,10 +15,12 @@
   "scripts": {
     "dev": "vite build --watch --mode development",
     "build": "vite build",
+    "screenshot:tablet": "node scripts/screenshot-tablet.mjs",
     "test": "node scripts/check.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "playwright-core": "^1.60.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
   }
