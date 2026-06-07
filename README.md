@@ -81,6 +81,17 @@ https://github.com/RyanChouHua/bili-fitness-timer/raw/refs/heads/main/timestamps
 
 ## 开发
 
+标准开发流程：
+
+1. 先阅读本 `README.md`，确认安装入口、功能范围、发布要求和维护注意事项。
+2. 开始修改前执行 `git status --short`，确认当前工作区是否干净；必要时先 `git pull origin main` 同步 GitHub。
+3. 读取相关源码和配置，例如 `package.json`、`vite.config.ts`、`src/main.ts`、`scripts/check.mjs`，不要凭空假设命令或目录。
+4. 按任务做最小必要修改；涉及 userscript 行为时同步更新 `src/` 和构建后的 `dist/`。
+5. 使用项目已有命令验证：`npm run test`、`npm run typecheck`、`npm run build`。
+6. 需要浏览器效果验证或 README 效果图时执行 `npm run screenshot:tablet`，通过 Playwright 调用浏览器生成截图。
+7. 提交前检查 `git diff` 和 `git status --short`，只 `git add` 本次相关文件。
+8. 用 Git 提交并推送 GitHub：`git commit -m "<message>"`、`git push origin main`。
+
 ```bash
 npm install
 npm run test
@@ -129,6 +140,12 @@ git push origin main
 
 ```bash
 npm run screenshot:tablet
+```
+
+脚本已将下面的便携 Chrome 写入 Playwright 首选调用路径：
+
+```text
+C:\A_Program\portable_apps\Browse\Chrome\App\chrome.exe
 ```
 
 如果使用便携浏览器，可显式指定路径：

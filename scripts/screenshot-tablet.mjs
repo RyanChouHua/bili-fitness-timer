@@ -8,10 +8,11 @@ import { chromium } from 'playwright-core'
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const scriptPath = resolve(repoRoot, 'dist/bili-fitness-timer.user.js')
 const screenshotPath = resolve(repoRoot, 'pic/tablet-training-controls.png')
+const preferredChromePath = 'C:\\A_Program\\portable_apps\\Browse\\Chrome\\App\\chrome.exe'
 
 const chromeCandidates = [
   process.env.CHROME_PATH,
-  'C:\\A_Program\\portable_apps\\Browse\\Chrome\\App\\chrome.exe',
+  preferredChromePath,
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
