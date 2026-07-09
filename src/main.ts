@@ -15,7 +15,7 @@ import {
 } from './core'
 
 type Mode = 'idle' | 'exercise' | 'rest' | 'paused' | 'complete'
-type WorkTab = 'actions' | 'groups' | 'input' | 'settings'
+type WorkTab = 'groups' | 'preview' | 'settings'
 
 interface Settings {
   beepDuration: number
@@ -67,7 +67,6 @@ interface Preferences {
   previewLocked: boolean
   activeTab: WorkTab
   inputCollapsed: boolean
-  detailsExpanded: boolean
 }
 
 const panelId = 'bili-fitness-timer-panel'
@@ -86,8 +85,7 @@ let settings: Settings = { ...defaultSettings }
 let collapsed = false
 let previewLocked = true
 let inputCollapsed = false
-let detailsExpanded = false
-let activeWorkTab: WorkTab = 'actions'
+let activeWorkTab: WorkTab = 'groups'
 let groupPage = 0
 let selectedStartIndex = 0
 let panelPosition: PanelPosition | null = null
@@ -153,13 +151,9 @@ function optionalText(value: unknown): string | undefined {
 }
 
 function normalizeWorkTab(value: unknown): WorkTab {
-  if (value === 'preview' || value === 'actions') {
-    return 'actions'
-  }
-  if (value === 'groups' || value === 'input' || value === 'settings') {
-    return value
-  }
-  return 'actions'
+  return value === 'groups' || value === 'preview' || value === 'settings'
+    ? value
+    : 'groups'
 }
 
 function createEmptyGroup(title = '子分组 1'): StoredPlan {
@@ -368,9 +362,8 @@ function loadPreferences(): Preferences {
         panelPosition: null,
         panelSize: null,
         previewLocked: true,
-        activeTab: 'actions',
+        activeTab: 'groups',
         inputCollapsed: false,
-        detailsExpanded: false,
       }
     }
 
@@ -383,7 +376,6 @@ function loadPreferences(): Preferences {
       previewLocked: booleanPreference(parsed.previewLocked, true),
       activeTab: normalizeWorkTab(parsed.activeTab),
       inputCollapsed: booleanPreference(parsed.inputCollapsed, false),
-      detailsExpanded: booleanPreference(parsed.detailsExpanded, false),
     }
     if (
       position &&
@@ -417,9 +409,8 @@ function loadPreferences(): Preferences {
       panelPosition: null,
       panelSize: null,
       previewLocked: true,
-      activeTab: 'actions',
+      activeTab: 'groups',
       inputCollapsed: false,
-      detailsExpanded: false,
     }
   }
 
@@ -427,9 +418,8 @@ function loadPreferences(): Preferences {
     panelPosition: null,
     panelSize: null,
     previewLocked: true,
-    activeTab: 'actions',
+    activeTab: 'groups',
     inputCollapsed: false,
-    detailsExpanded: false,
   }
 }
 
@@ -442,13 +432,8 @@ function savePreferences(): void {
       previewLocked,
       activeTab: activeWorkTab,
       inputCollapsed,
-      detailsExpanded,
     } satisfies Preferences),
   )
-}
-
-function useDockLayout(): boolean {
-  return true
 }
 
 function isMobileViewport(): boolean {
@@ -482,11 +467,6 @@ function clampPanelSize(size: PanelSize): PanelSize {
 }
 
 function applyPanelSize(panel: HTMLElement): void {
-  if (useDockLayout()) {
-    panel.style.width = ''
-    panel.style.height = ''
-    return
-  }
   if (collapsed || isMobileViewport() || !panelSize) {
     panel.style.width = ''
     panel.style.height = ''
@@ -511,15 +491,6 @@ function clampPanelPosition(position: PanelPosition, panel: HTMLElement): PanelP
 }
 
 function applyPanelPosition(panel: HTMLElement): void {
-  if (useDockLayout()) {
-    applyPanelSize(panel)
-    panel.style.left = ''
-    panel.style.right = ''
-    panel.style.top = ''
-    panel.style.bottom = ''
-    return
-  }
-
   if (isMobileViewport()) {
     applyPanelSize(panel)
     panel.style.left = ''
@@ -550,9 +521,6 @@ function applyPanelPosition(panel: HTMLElement): void {
 function setupPanelDrag(header: HTMLElement, panel: HTMLElement): void {
   header.addEventListener('pointerdown', event => {
     if (collapsed || isMobileViewport() || event.button !== 0) {
-      return
-    }
-    if (useDockLayout()) {
       return
     }
     if ((event.target as HTMLElement).closest('button')) {
@@ -598,9 +566,6 @@ function setupPanelDrag(header: HTMLElement, panel: HTMLElement): void {
 function setupPanelResize(handle: HTMLElement, panel: HTMLElement): void {
   handle.addEventListener('pointerdown', event => {
     if (collapsed || isMobileViewport() || event.button !== 0) {
-      return
-    }
-    if (useDockLayout()) {
       return
     }
 
@@ -971,7 +936,7 @@ function startTraining(): void {
   if (exercises.length === 0) {
     return
   }
-  activeWorkTab = 'actions'
+  activeWorkTab = 'preview'
   savePreferences()
   selectedStartIndex = Math.min(selectedStartIndex, exercises.length - 1)
   runtime = {
@@ -1212,46 +1177,21 @@ function injectStyle(): void {
   style.id = styleId
   style.textContent = `
     #${panelId} {
-      --bft-bg: #111417;
-      --bft-bg-raised: #151a1d;
-      --bft-surface: #1a1f22;
-      --bft-surface-2: #20262a;
-      --bft-surface-3: #283034;
-      --bft-line: rgba(244, 247, 246, 0.14);
-      --bft-line-strong: rgba(244, 247, 246, 0.22);
-      --bft-text: #f4f7f6;
-      --bft-muted: #aab6b2;
-      --bft-subtle: #76837e;
-      --bft-primary: #aeb8a0;
-      --bft-primary-strong: #c4ccb6;
-      --bft-primary-ink: #111417;
-      --bft-accent: #7bcbe6;
-      --bft-accent-strong: #00aeec;
-      --bft-rest: #d7efff;
-      --bft-danger: #f28b82;
-      --bft-danger-bg: rgba(242, 139, 130, 0.15);
-      --bft-radius: 8px;
-      --bft-touch: 48px;
-      --bft-shadow: 0 22px 64px rgba(0, 0, 0, 0.46);
-      --bft-focus: 0 0 0 3px rgba(123, 203, 230, 0.28);
       position: fixed;
       right: 10px;
       top: 10px;
       z-index: 2147483647;
-      width: min(calc(100vw - 20px), clamp(430px, 48vw, 760px));
+      width: min(calc(100vw - 20px), clamp(430px, 44vw, 720px));
       height: min(780px, calc(100dvh - 20px));
       max-height: calc(100dvh - 20px);
-      color: var(--bft-text);
-      background:
-        linear-gradient(180deg, rgba(26, 31, 34, 0.98), rgba(17, 20, 23, 0.985));
-      border: 1px solid var(--bft-line-strong);
-      border-radius: var(--bft-radius);
-      box-shadow: var(--bft-shadow);
-      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      color: #f7f8fb;
+      background: linear-gradient(180deg, rgba(31, 34, 40, 0.98), rgba(17, 19, 23, 0.97));
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 8px;
+      box-shadow: 0 18px 54px rgba(0, 0, 0, 0.42);
+      font: 12.5px/1.42 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       overflow: hidden;
       container-type: inline-size;
-      color-scheme: dark;
-      isolation: isolate;
     }
     #${panelId} * {
       box-sizing: border-box;
@@ -1262,24 +1202,15 @@ function injectStyle(): void {
     #${panelId} input {
       font: inherit;
     }
-    #${panelId} button,
-    #${panelId} select,
-    #${panelId} input,
-    #${panelId} textarea {
-      color-scheme: dark;
-    }
-    #${panelId} button {
-      touch-action: manipulation;
-    }
     .bft-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      min-height: 58px;
-      padding: 10px 12px;
-      background: rgba(32, 38, 42, 0.92);
-      border-bottom: 1px solid var(--bft-line);
+      min-height: 52px;
+      padding: 9px 11px;
+      background: rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       cursor: grab;
       user-select: none;
       touch-action: none;
@@ -1290,7 +1221,6 @@ function injectStyle(): void {
     .bft-title {
       font-weight: 700;
       letter-spacing: 0;
-      color: var(--bft-text);
     }
     .bft-brand {
       display: flex;
@@ -1304,9 +1234,9 @@ function injectStyle(): void {
       width: 30px;
       height: 30px;
       flex: 0 0 auto;
-      color: #071316;
-      background: linear-gradient(135deg, var(--bft-accent-strong), var(--bft-primary));
-      border-radius: var(--bft-radius);
+      color: #07120f;
+      background: linear-gradient(135deg, #00aeec, #55d6aa);
+      border-radius: 7px;
       font-size: 12px;
       font-weight: 800;
     }
@@ -1317,7 +1247,7 @@ function injectStyle(): void {
     }
     .bft-subtitle {
       min-width: 0;
-      color: var(--bft-muted);
+      color: rgba(247, 248, 251, 0.62);
       font-size: 11px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1331,8 +1261,8 @@ function injectStyle(): void {
     }
     .bft-body {
       display: block;
-      padding: 12px;
-      height: calc(100% - 58px);
+      padding: 10px;
+      height: calc(100% - 52px);
       overflow-x: hidden;
       overflow-y: auto;
       scrollbar-width: thin;
@@ -1351,7 +1281,7 @@ function injectStyle(): void {
     }
     .bft-control-stack {
       display: grid;
-      gap: 10px;
+      gap: 8px;
       z-index: 1;
       padding-bottom: 2px;
       min-height: 0;
@@ -1360,7 +1290,7 @@ function injectStyle(): void {
     .bft-main-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
-      gap: 12px;
+      gap: 10px;
       align-content: start;
       height: auto;
       min-height: 0;
@@ -1369,7 +1299,7 @@ function injectStyle(): void {
     .bft-main-left,
     .bft-main-right {
       display: grid;
-      gap: 10px;
+      gap: 7px;
       align-content: start;
       min-width: 0;
       min-height: 0;
@@ -1382,55 +1312,11 @@ function injectStyle(): void {
     }
     .bft-status {
       display: grid;
-      gap: 10px;
-      padding: 12px;
-      background:
-        linear-gradient(180deg, rgba(40, 48, 52, 0.76), rgba(26, 31, 34, 0.92));
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-    }
-    .bft-status-rest {
-      border-color: rgba(215, 239, 255, 0.34);
-    }
-    .bft-status-complete {
-      border-color: rgba(174, 184, 160, 0.42);
-    }
-    .bft-status-hero {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-    }
-    .bft-progress-tile {
-      display: grid;
-      place-items: center;
-      width: 62px;
-      min-height: 62px;
-      padding: 7px;
-      color: var(--bft-primary-ink);
-      background: var(--bft-primary);
-      border-radius: var(--bft-radius);
-      box-shadow: inset 0 -1px 0 rgba(17, 20, 23, 0.22);
-    }
-    .bft-progress-tile span {
-      color: rgba(17, 20, 23, 0.72);
-      font-size: 10px;
-      line-height: 1;
-    }
-    .bft-progress-tile strong {
-      color: var(--bft-primary-ink);
-      font-size: 24px;
-      line-height: 1.1;
-      font-weight: 850;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .bft-status-copy {
-      display: grid;
-      gap: 5px;
-      min-width: 0;
+      gap: 8px;
+      padding: 10px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.06));
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
     }
     .bft-status-head {
       display: flex;
@@ -1441,10 +1327,8 @@ function injectStyle(): void {
     }
     .bft-status-title {
       min-width: 0;
-      color: var(--bft-text);
-      font-size: 21px;
+      font-size: 20px;
       line-height: 1.12;
-      font-weight: 820;
       overflow-wrap: anywhere;
     }
     .bft-status-detail {
@@ -1454,11 +1338,11 @@ function injectStyle(): void {
     .bft-save-pill {
       flex: 0 0 auto;
       max-width: 45%;
-      padding: 4px 8px;
-      color: var(--bft-primary-strong);
-      border: 1px solid rgba(174, 184, 160, 0.34);
+      padding: 3px 7px;
+      color: #c8f7ea;
+      border: 1px solid rgba(85, 214, 170, 0.34);
       border-radius: 999px;
-      background: rgba(174, 184, 160, 0.1);
+      background: rgba(85, 214, 170, 0.12);
       font-size: 11px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1467,20 +1351,20 @@ function injectStyle(): void {
     .bft-metric-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
+      gap: 6px;
     }
     .bft-metric {
       display: grid;
-      gap: 2px;
+      gap: 1px;
       min-width: 0;
-      padding: 8px 9px;
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-      background: rgba(17, 20, 23, 0.42);
+      padding: 6px 7px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.16);
     }
     .bft-metric span {
       min-width: 0;
-      color: var(--bft-subtle);
+      color: rgba(247, 248, 251, 0.58);
       font-size: 10.5px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1488,8 +1372,7 @@ function injectStyle(): void {
     }
     .bft-metric strong {
       min-width: 0;
-      color: var(--bft-text);
-      font-size: 14px;
+      font-size: 13px;
       line-height: 1.22;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1498,15 +1381,15 @@ function injectStyle(): void {
     .bft-tabs {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 4px;
-      padding: 4px;
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-      background: rgba(17, 20, 23, 0.42);
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.18);
     }
     .bft-tab {
       min-width: 0;
-      min-height: 34px;
+      min-height: 30px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1514,37 +1397,37 @@ function injectStyle(): void {
       background: transparent;
     }
     .bft-tab-active {
-      color: var(--bft-primary-ink);
-      background: var(--bft-primary);
-      border-color: var(--bft-primary);
+      color: #07120f;
+      background: #55d6aa;
+      border-color: #55d6aa;
       font-weight: 700;
     }
     .bft-work-panel {
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: 10px;
+      gap: 8px;
       min-height: 0;
       overflow: visible;
-      padding: 10px;
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-      background: rgba(26, 31, 34, 0.72);
+      padding: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.055);
     }
     .bft-tool-group {
       display: grid;
-      gap: 7px;
+      gap: 5px;
     }
     .bft-tool-group .bft-button {
       flex: 1 1 0;
     }
     .bft-left-input {
       display: grid;
-      gap: 9px;
-      padding: 10px;
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-      background: rgba(26, 31, 34, 0.72);
+      gap: 8px;
+      padding: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.055);
     }
     .bft-section-header {
       display: flex;
@@ -1561,7 +1444,7 @@ function injectStyle(): void {
     }
     .bft-tool-label {
       font-size: 11px;
-      color: var(--bft-subtle);
+      color: rgba(246, 247, 249, 0.58);
     }
     .bft-panel-heading {
       display: flex;
@@ -1589,9 +1472,9 @@ function injectStyle(): void {
       display: grid;
       gap: 2px;
       padding: 8px;
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-      background: rgba(17, 20, 23, 0.34);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.16);
       min-width: 0;
     }
     .bft-group-summary strong,
@@ -1620,43 +1503,31 @@ function injectStyle(): void {
     }
     .bft-field-label {
       font-size: 11px;
-      color: var(--bft-subtle);
-    }
-    .bft-control-deck {
-      display: grid;
-      gap: 10px;
-      align-content: start;
-    }
-    .bft-start-row {
-      align-items: stretch;
-    }
-    .bft-start-picker {
-      width: 100%;
+      color: rgba(246, 247, 249, 0.58);
     }
     .bft-primary-action-row {
       display: flex;
       justify-content: center;
     }
     .bft-primary-training-button {
-      width: min(100%, 420px);
-      min-height: 82px;
-      font-size: 19px;
+      width: min(100%, 360px);
+      min-height: 70px;
+      font-size: 18px;
       letter-spacing: 0;
-      box-shadow: 0 12px 28px rgba(174, 184, 160, 0.18);
     }
     .bft-resting-button:disabled {
-      opacity: 0.9;
+      opacity: 0.78;
       cursor: default;
-      color: #10202a;
-      border-color: rgba(215, 239, 255, 0.5);
-      background: var(--bft-rest);
+      color: #f7f8fb;
+      border-color: rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.11);
     }
     .bft-control-row {
       justify-content: center;
     }
     .bft-control-row .bft-button {
-      flex: 0 1 180px;
-      min-width: 132px;
+      flex: 0 1 168px;
+      min-width: 112px;
     }
     .bft-safety-row {
       display: flex;
@@ -1676,7 +1547,7 @@ function injectStyle(): void {
       min-width: 92px;
     }
     .bft-muted {
-      color: var(--bft-muted);
+      color: rgba(247, 248, 251, 0.68);
     }
     .bft-row {
       display: flex;
@@ -1694,11 +1565,11 @@ function injectStyle(): void {
       width: 100%;
       min-height: 98px;
       resize: vertical;
-      color: var(--bft-text);
-      background: rgba(17, 20, 23, 0.58);
-      border: 1px solid var(--bft-line-strong);
-      border-radius: var(--bft-radius);
-      padding: 9px;
+      color: #f7f8fb;
+      background: rgba(0, 0, 0, 0.24);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 6px;
+      padding: 7px;
       outline: none;
       overflow-x: auto;
       white-space: pre;
@@ -1708,11 +1579,11 @@ function injectStyle(): void {
       width: 100%;
       min-width: 0;
       min-height: 28px;
-      color: var(--bft-text);
-      background: rgba(17, 20, 23, 0.58);
-      border: 1px solid var(--bft-line-strong);
-      border-radius: var(--bft-radius);
-      padding: 7px 9px;
+      color: #f7f8fb;
+      background: rgba(0, 0, 0, 0.24);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 6px;
+      padding: 5px 7px;
       outline: none;
     }
     .bft-notes-input {
@@ -1721,95 +1592,50 @@ function injectStyle(): void {
     .bft-input:focus,
     .bft-text-input:focus,
     .bft-select:focus {
-      border-color: var(--bft-accent);
-      box-shadow: var(--bft-focus);
+      border-color: #00aeec;
     }
     .bft-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      min-height: 36px;
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-      color: var(--bft-text);
-      background: rgba(40, 48, 52, 0.78);
-      padding: 7px 11px;
+      min-height: 26px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 6px;
+      color: #f7f8fb;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 3px 7px;
       cursor: pointer;
       font-size: 12px;
-      line-height: 1.18;
-      text-align: center;
-      white-space: nowrap;
-      transition: background 120ms ease, border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+      transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
     }
     .bft-button:hover {
-      background: rgba(48, 58, 63, 0.9);
+      background: rgba(255, 255, 255, 0.16);
     }
     .bft-button:active:not(:disabled) {
       transform: translateY(1px);
-    }
-    .bft-button:focus-visible {
-      outline: none;
-      box-shadow: var(--bft-focus);
     }
     .bft-button:disabled {
       opacity: 0.45;
       cursor: not-allowed;
     }
-    .bft-button.bft-resting-button:disabled {
-      opacity: 0.9;
-      cursor: default;
-      color: #10202a;
-      border-color: rgba(215, 239, 255, 0.5);
-      background: var(--bft-rest);
-    }
     .bft-primary {
-      color: var(--bft-primary-ink);
-      background: var(--bft-primary);
-      border-color: var(--bft-primary);
-      font-weight: 800;
-    }
-    .bft-primary:hover {
-      background: var(--bft-primary-strong);
-    }
-    .bft-tonal {
-      color: var(--bft-primary-strong);
-      background: rgba(174, 184, 160, 0.13);
-      border-color: rgba(174, 184, 160, 0.34);
+      color: #07120f;
+      background: #55d6aa;
+      border-color: #55d6aa;
       font-weight: 700;
     }
-    .bft-tonal:hover {
-      background: rgba(174, 184, 160, 0.2);
-    }
-    .bft-outline {
-      color: var(--bft-text);
-      background: rgba(17, 20, 23, 0.12);
-      border-color: var(--bft-line-strong);
-    }
-    .bft-outline:hover {
-      background: rgba(40, 48, 52, 0.52);
-    }
-    .bft-quiet {
-      color: var(--bft-muted);
-      background: transparent;
-      border-color: transparent;
-    }
-    .bft-quiet:hover {
-      color: var(--bft-text);
-      background: rgba(244, 247, 246, 0.08);
+    .bft-primary:hover {
+      background: #72e0bb;
     }
     .bft-danger {
-      color: #ffd9d7;
-      border-color: rgba(242, 139, 130, 0.42);
-      background: var(--bft-danger-bg);
+      color: #ffd9d9;
+      border-color: rgba(255, 114, 114, 0.42);
+      background: rgba(255, 114, 114, 0.16);
     }
     .bft-select {
       min-height: 28px;
-      color: var(--bft-text);
-      background: rgba(17, 20, 23, 0.58);
-      border: 1px solid var(--bft-line-strong);
-      border-radius: var(--bft-radius);
-      padding: 6px 9px;
+      color: #f7f8fb;
+      background: rgba(0, 0, 0, 0.24);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 6px;
+      padding: 3px 6px;
     }
     .bft-select option {
       color: #1f2329;
@@ -1819,7 +1645,7 @@ function injectStyle(): void {
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      color: var(--bft-muted);
+      color: rgba(246, 247, 249, 0.82);
     }
     .bft-list {
       display: grid;
@@ -1841,14 +1667,14 @@ function injectStyle(): void {
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
       gap: 7px;
-      padding: 8px;
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-      background: rgba(40, 48, 52, 0.36);
+      padding: 7px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
     }
     .bft-manager-active {
-      border-color: rgba(174, 184, 160, 0.76);
-      background: rgba(174, 184, 160, 0.12);
+      border-color: rgba(85, 214, 170, 0.85);
+      background: rgba(85, 214, 170, 0.12);
     }
     .bft-manager-content {
       display: grid;
@@ -1880,8 +1706,8 @@ function injectStyle(): void {
       flex-wrap: nowrap;
     }
     .bft-manager-item .bft-button {
-      min-height: 34px;
-      padding: 5px 8px;
+      min-height: 24px;
+      padding: 2px 5px;
       font-size: 11.5px;
     }
     .bft-pager {
@@ -1902,35 +1728,34 @@ function injectStyle(): void {
       color: inherit;
       text-align: left;
       cursor: pointer;
-      padding: 10px;
-      min-height: 58px;
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-      background: rgba(40, 48, 52, 0.36);
+      padding: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
     }
     .bft-item:hover {
-      background: rgba(48, 58, 63, 0.56);
+      background: rgba(255, 255, 255, 0.09);
     }
     .bft-item-active {
-      border-color: rgba(123, 203, 230, 0.9);
-      background: rgba(123, 203, 230, 0.14);
+      border-color: rgba(85, 214, 170, 0.85);
+      background: rgba(85, 214, 170, 0.12);
     }
     .bft-item-selected {
-      border-color: rgba(174, 184, 160, 0.82);
+      border-color: rgba(0, 174, 236, 0.88);
     }
     .bft-empty {
-      padding: 9px;
-      color: var(--bft-muted);
-      border-radius: var(--bft-radius);
-      background: rgba(40, 48, 52, 0.36);
+      padding: 7px;
+      color: rgba(247, 248, 251, 0.64);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
     }
     .bft-error {
       display: grid;
       gap: 3px;
-      color: #ffd9d7;
+      color: #ffb9b9;
       padding: 8px;
-      border-radius: var(--bft-radius);
-      background: var(--bft-danger-bg);
+      border-radius: 6px;
+      background: rgba(255, 81, 81, 0.12);
     }
     .bft-resize-handle {
       position: absolute;
@@ -1975,7 +1800,7 @@ function injectStyle(): void {
       }
       .bft-body {
         padding: 8px;
-        height: calc(100% - 58px);
+        height: calc(100% - 52px);
       }
       .bft-input {
         min-height: 104px;
@@ -1984,23 +1809,22 @@ function injectStyle(): void {
         grid-template-columns: 1fr;
       }
       .bft-button,
-      .bft-select,
-      .bft-text-input {
-        min-height: var(--bft-touch);
+      .bft-select {
+        min-height: 32px;
       }
       .bft-tool-row .bft-button {
         flex: 1 1 calc(50% - 6px);
-        padding: 8px 9px;
+        padding: 5px 6px;
         font-size: 12px;
       }
       .bft-primary-training-button {
         width: 100%;
-        min-height: 84px;
+        min-height: 74px;
         font-size: 18px;
       }
       .bft-control-row .bft-button {
         flex: 1 1 calc(50% - 6px);
-        padding: 8px 9px;
+        padding: 5px 6px;
         font-size: 12px;
       }
       .bft-tool-group .bft-button {
@@ -2017,20 +1841,9 @@ function injectStyle(): void {
       }
       .bft-manager-actions .bft-button {
         flex: 1 1 0;
-        min-height: var(--bft-touch);
       }
       .bft-status {
-        padding: 9px;
-      }
-      .bft-status-hero {
-        grid-template-columns: minmax(0, 1fr);
-      }
-      .bft-progress-tile {
-        width: 100%;
-        min-height: 48px;
-        grid-auto-flow: column;
-        justify-content: start;
-        gap: 8px;
+        padding: 7px;
       }
       .bft-row {
         gap: 6px;
@@ -2050,25 +1863,21 @@ function injectStyle(): void {
       #${panelId} {
         right: max(8px, env(safe-area-inset-right));
         top: max(8px, env(safe-area-inset-top));
-        width: min(calc(100vw - 16px), 820px);
+        width: min(calc(100vw - 16px), clamp(410px, 42vw, 620px));
         height: calc(100dvh - 16px);
         max-height: calc(100dvh - 16px);
       }
       .bft-body {
-        height: calc(100% - 58px);
+        height: calc(100% - 52px);
       }
       .bft-button,
-      .bft-select,
-      .bft-text-input {
-        min-height: var(--bft-touch);
-      }
-      .bft-manager-item .bft-button {
-        min-height: var(--bft-touch);
+      .bft-select {
+        min-height: 30px;
       }
     }
-    @container (min-width: 680px) {
+    @container (min-width: 620px) {
       .bft-main-grid {
-        grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+        grid-template-columns: minmax(0, 1fr) minmax(240px, 0.86fr);
         align-items: start;
       }
       .bft-main-right {
@@ -2082,185 +1891,6 @@ function injectStyle(): void {
       }
       .bft-save-pill {
         max-width: 38%;
-      }
-    }
-    #${panelId}.bft-dock {
-      left: 50%;
-      right: auto;
-      top: auto;
-      bottom: max(8px, env(safe-area-inset-bottom));
-      width: min(calc(100vw - 16px), 960px);
-      height: auto;
-      max-height: calc(100dvh - 16px);
-      transform: translateX(-50%);
-      border-radius: 12px;
-    }
-    #${panelId}.bft-dock.bft-details-open {
-      height: min(86dvh, 760px);
-    }
-    #${panelId}.bft-dock.bft-collapsed {
-      left: auto;
-      right: max(8px, env(safe-area-inset-right));
-      bottom: max(8px, env(safe-area-inset-bottom));
-      width: auto;
-      min-width: 126px;
-      transform: none;
-    }
-    .bft-dock .bft-header {
-      min-height: 54px;
-      padding: 9px 12px;
-      cursor: default;
-      touch-action: auto;
-      background: rgba(26, 31, 34, 0.96);
-    }
-    .bft-dock .bft-header-actions .bft-button {
-      min-height: 40px;
-    }
-    .bft-dock .bft-body {
-      display: grid;
-      gap: 10px;
-      height: auto;
-      max-height: calc(100dvh - 70px);
-      padding: 10px 12px 12px;
-      overflow: auto;
-    }
-    .bft-dock.bft-details-open .bft-body {
-      height: calc(100% - 54px);
-      grid-template-rows: auto minmax(0, 1fr);
-      overflow: hidden;
-    }
-    .bft-dock .bft-control-stack {
-      display: grid;
-      grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.92fr);
-      gap: 10px 12px;
-      align-items: stretch;
-      padding: 0;
-      min-height: 0;
-    }
-    .bft-dock .bft-status {
-      min-height: 0;
-      padding: 14px;
-    }
-    .bft-dock .bft-status-title {
-      font-size: 24px;
-    }
-    .bft-dock .bft-control-deck {
-      align-content: stretch;
-      padding: 10px;
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-      background: rgba(17, 20, 23, 0.42);
-    }
-    .bft-dock .bft-primary-training-button {
-      width: 100%;
-      min-height: 96px;
-      font-size: 21px;
-    }
-    .bft-dock .bft-button,
-    .bft-dock .bft-select,
-    .bft-dock .bft-text-input {
-      min-height: var(--bft-touch);
-    }
-    .bft-dock .bft-control-row .bft-button,
-    .bft-dock .bft-tool-row .bft-button {
-      flex: 1 1 0;
-    }
-    .bft-dock .bft-safety-row {
-      justify-content: space-between;
-    }
-    .bft-action-strip {
-      grid-column: 1 / -1;
-      display: grid;
-      gap: 6px;
-      min-width: 0;
-      padding: 8px;
-      border: 1px solid var(--bft-line);
-      border-radius: var(--bft-radius);
-      background: rgba(26, 31, 34, 0.58);
-    }
-    .bft-strip-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      min-width: 0;
-    }
-    .bft-strip-head strong,
-    .bft-strip-head span {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .bft-action-strip .bft-list {
-      display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      overflow-y: hidden;
-      padding: 0 0 2px;
-      scroll-snap-type: x proximity;
-      scrollbar-width: thin;
-    }
-    .bft-action-strip .bft-list > li {
-      flex: 0 0 min(280px, 78vw);
-      scroll-snap-align: start;
-    }
-    .bft-action-strip .bft-item {
-      height: 100%;
-      min-height: 64px;
-    }
-    .bft-details-drawer {
-      display: grid;
-      gap: 10px;
-      min-height: 0;
-      overflow: hidden;
-      padding-top: 10px;
-      border-top: 1px solid var(--bft-line);
-    }
-    .bft-details-drawer .bft-tabs {
-      flex: 0 0 auto;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-    .bft-details-drawer .bft-work-panel {
-      min-height: 0;
-      overflow: auto;
-    }
-    .bft-details-drawer .bft-list {
-      display: grid;
-      gap: 8px;
-    }
-    .bft-input-panel {
-      display: grid;
-      gap: 10px;
-      min-width: 0;
-    }
-    .bft-dock .bft-resize-handle {
-      display: none;
-    }
-    @media (max-width: 720px) {
-      #${panelId}.bft-dock {
-        left: 6px;
-        right: 6px;
-        bottom: max(0px, env(safe-area-inset-bottom));
-        width: auto;
-        transform: none;
-        border-radius: 12px 12px 0 0;
-      }
-      #${panelId}.bft-dock.bft-details-open {
-        height: min(88dvh, 720px);
-      }
-      .bft-dock .bft-control-stack {
-        grid-template-columns: 1fr;
-      }
-      .bft-dock .bft-status-title {
-        font-size: 21px;
-      }
-      .bft-dock .bft-primary-training-button {
-        min-height: 86px;
-        font-size: 19px;
-      }
-      .bft-details-drawer .bft-tabs {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
   `
@@ -2310,9 +1940,8 @@ function createTabBar(): HTMLElement {
   const tabs = document.createElement('div')
   tabs.className = 'bft-tabs'
   const items: Array<{ id: WorkTab; label: string }> = [
-    { id: 'actions', label: '动作' },
     { id: 'groups', label: '分组' },
-    { id: 'input', label: '录入' },
+    { id: 'preview', label: '预览' },
     { id: 'settings', label: '设置' },
   ]
   items.forEach(item => {
@@ -2320,7 +1949,7 @@ function createTabBar(): HTMLElement {
       activeWorkTab = item.id
       savePreferences()
       render()
-    }, `bft-tab ${activeWorkTab === item.id ? 'bft-tab-active' : 'bft-quiet'}`)
+    }, `bft-tab ${activeWorkTab === item.id ? 'bft-tab-active' : ''}`)
     button.setAttribute('aria-pressed', String(activeWorkTab === item.id))
     tabs.append(button)
   })
@@ -2358,132 +1987,6 @@ function createToolGroup(labelText: string, buttons: HTMLButtonElement[]): HTMLE
   buttonRow.append(...buttons)
   group.append(label, buttonRow)
   return group
-}
-
-function createExerciseList(mode: 'strip' | 'panel' = 'panel'): HTMLElement {
-  const list = document.createElement('ul')
-  list.className = 'bft-list'
-  exercises.forEach((exercise, index) => {
-    const itemWrapper = document.createElement('li')
-    const item = document.createElement('button')
-    item.type = 'button'
-    item.className = [
-      'bft-item',
-      index === runtime.exerciseIndex && runtime.mode !== 'idle' ? 'bft-item-active' : '',
-      index === selectedStartIndex ? 'bft-item-selected' : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-    const canSwitchItem =
-      runtime.mode === 'idle' || runtime.mode === 'complete' || !previewLocked
-    item.disabled = !canSwitchItem
-    item.addEventListener('click', () => {
-      switchToExercise(index)
-    })
-    const name = document.createElement('strong')
-    name.textContent = exercise.name
-    const meta = document.createElement('span')
-    meta.className = 'bft-muted'
-    const prefix = mode === 'strip' ? `${index + 1}. ` : ''
-    meta.textContent = `${formatTimestamp(exercise.start)}-${formatTimestamp(exercise.end)} · ${exercise.sets} 组 · ${exercise.minReps}${exercise.maxReps === exercise.minReps ? '' : `-${exercise.maxReps}`} 次 · 休息 ${exercise.restSeconds}s`
-    name.textContent = `${prefix}${exercise.name}`
-    item.append(name, meta)
-    itemWrapper.append(item)
-    list.append(itemWrapper)
-  })
-
-  if (exercises.length === 0) {
-    const empty = document.createElement('li')
-    empty.className = 'bft-empty'
-    empty.textContent = '暂无有效动作'
-    list.append(empty)
-  }
-
-  return list
-}
-
-function createActionStrip(): HTMLElement {
-  const wrapper = document.createElement('div')
-  wrapper.className = 'bft-action-strip'
-  const head = document.createElement('div')
-  head.className = 'bft-strip-head'
-  const title = document.createElement('strong')
-  title.textContent = '动作队列'
-  const detail = document.createElement('span')
-  detail.className = 'bft-muted'
-  const current = getCurrentExercise()
-  detail.textContent = current
-    ? `当前 ${runtime.exerciseIndex + 1}/${exercises.length} · ${current.name}`
-    : `${exercises.length} 个动作`
-  head.append(title, detail)
-  wrapper.append(head, createExerciseList('strip'))
-  return wrapper
-}
-
-function createInputPanel(parseResult: ReturnType<typeof parsePlan>): {
-  panel: HTMLElement
-  textarea: HTMLTextAreaElement
-} {
-  const textarea = document.createElement('textarea')
-  textarea.className = 'bft-input'
-  textarea.wrap = 'off'
-  textarea.placeholder = '俯卧撑 00:12-00:28 3x8-12 rest45'
-  textarea.value = rawInput
-  textarea.addEventListener('input', () => {
-    const selectionStart = textarea.selectionStart
-    const selectionEnd = textarea.selectionEnd
-    rawInput = textarea.value
-    runtime.mode = runtime.mode === 'complete' ? 'idle' : runtime.mode
-    savePlan()
-    render({
-      restoreTextarea: {
-        selectionStart,
-        selectionEnd,
-      },
-    })
-  })
-
-  const onlineImportButton = createButton('在线导入', () => {
-    void importPlanFromOnline()
-  }, 'bft-outline')
-  onlineImportButton.disabled = onlineImportBusy
-  const saveButton = createButton('保存', () => {
-    savePlan('已手动保存')
-    render()
-  }, 'bft-tonal')
-  const insertGroup = createToolGroup('时间', [
-    createButton('插入开始', () => insertCurrentTime('start'), 'bft-outline'),
-    createButton('插入结束', () => insertCurrentTime('end'), 'bft-outline'),
-    createButton('示例', () => {
-      rawInput =
-        '俯卧撑 00:12-00:28 3x8-12 rest45\n深蹲 01:05-01:22 4x10 rest60'
-      savePlan()
-      render()
-    }, 'bft-quiet'),
-  ])
-  const fileGroup = createToolGroup('数据', [
-    createButton('导出', exportPlan, 'bft-quiet'),
-    createButton('导入', openImportPicker, 'bft-quiet'),
-    onlineImportButton,
-    saveButton,
-  ])
-
-  const panel = document.createElement('div')
-  panel.className = 'bft-input-panel'
-  panel.append(textarea, insertGroup, fileGroup)
-
-  if (parseResult.errors.length > 0) {
-    const errorBox = document.createElement('div')
-    errorBox.className = 'bft-error'
-    parseResult.errors.forEach(error => {
-      const line = document.createElement('span')
-      line.textContent = error
-      errorBox.append(line)
-    })
-    panel.append(errorBox)
-  }
-
-  return { panel, textarea }
 }
 
 function createTextField(
@@ -2545,7 +2048,7 @@ function createPlanInfoForm(): HTMLElement {
   actions.append(createButton('保存信息', () => {
     savePlan('已保存子分组信息')
     render()
-  }, 'bft-tonal'))
+  }, 'bft-primary'))
   wrapper.append(actions)
   return wrapper
 }
@@ -2604,11 +2107,11 @@ function createManagerList(): HTMLElement {
 
     const actions = document.createElement('div')
     actions.className = 'bft-manager-actions'
-    const loadButton = createButton('切换', () => switchToGroup(group.id), 'bft-tonal')
+    const loadButton = createButton('切换', () => switchToGroup(group.id), 'bft-primary')
     loadButton.disabled = group.id === activeGroupId
     actions.append(
       loadButton,
-      createButton('修改', () => editGroup(group.id), 'bft-outline'),
+      createButton('修改', () => editGroup(group.id)),
       createButton('删除', () => deleteGroup(group.id), 'bft-danger'),
     )
     content.append(title, meta)
@@ -2637,12 +2140,12 @@ function createGroupPager(): HTMLElement {
   const prevButton = createButton('上一页', () => {
     groupPage = Math.max(0, groupPage - 1)
     render()
-  }, 'bft-outline')
+  })
   prevButton.disabled = groupPage === 0
   const nextButton = createButton('下一页', () => {
     groupPage = Math.min(totalPages - 1, groupPage + 1)
     render()
-  }, 'bft-outline')
+  })
   nextButton.disabled = groupPage >= totalPages - 1
   actions.append(prevButton, nextButton)
   pager.append(meta, actions)
@@ -2673,8 +2176,8 @@ function createGroupCreateActions(): HTMLElement {
   const actions = document.createElement('div')
   actions.className = 'bft-row'
   actions.append(
-    createButton('新建空白子分组', createNewGroup, 'bft-tonal'),
-    createButton('复制当前计划', duplicateCurrentGroup, 'bft-outline'),
+    createButton('新建空白子分组', createNewGroup, 'bft-primary'),
+    createButton('复制当前计划', duplicateCurrentGroup),
   )
   wrapper.append(actions)
   return wrapper
@@ -2723,30 +2226,9 @@ function createSettingsPanel(): HTMLElement {
   return panel
 }
 
-function createWorkPanel(
-  parseResult: ReturnType<typeof parsePlan>,
-  list: HTMLElement,
-  inputPanel: HTMLElement,
-): HTMLElement {
+function createWorkPanel(parseResult: ReturnType<typeof parsePlan>, list: HTMLElement): HTMLElement {
   const panel = document.createElement('div')
   panel.className = 'bft-work-panel'
-
-  if (activeWorkTab === 'actions') {
-    const lockButton = createButton(previewLocked ? '解锁切换' : '锁定切换', () => {
-      previewLocked = !previewLocked
-      savePreferences()
-      render()
-    }, 'bft-tonal')
-    panel.append(
-      createPanelHeading(
-        '动作队列',
-        previewLocked ? '训练中锁定切换' : '训练中可切换动作',
-        lockButton,
-      ),
-      list,
-    )
-    return panel
-  }
 
   if (activeWorkTab === 'groups') {
     panel.append(
@@ -2760,10 +2242,19 @@ function createWorkPanel(
     return panel
   }
 
-  if (activeWorkTab === 'input') {
+  if (activeWorkTab === 'preview') {
+    const lockButton = createButton(previewLocked ? '解锁预览' : '锁定预览', () => {
+      previewLocked = !previewLocked
+      savePreferences()
+      render()
+    })
     panel.append(
-      createPanelHeading('时间戳录入', saveStatusText),
-      inputPanel,
+      createPanelHeading(
+        '动作预览',
+        previewLocked ? '训练中锁定切换' : '训练中可切换动作',
+        lockButton,
+      ),
+      list,
     )
     return panel
   }
@@ -2785,13 +2276,7 @@ function render(options: RenderOptions = {}): void {
     panel.id = panelId
     document.body.append(panel)
   }
-  panel.className = [
-    'bft-dock',
-    collapsed ? 'bft-collapsed' : '',
-    detailsExpanded ? 'bft-details-open' : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
+  panel.className = collapsed ? 'bft-collapsed' : ''
   applyPanelPosition(panel)
 
   const parseResult = parsePlan(rawInput)
@@ -2828,21 +2313,13 @@ function render(options: RenderOptions = {}): void {
   subtitle.textContent = activePlanTitle || getCurrentStorageId()
   titleStack.append(title, subtitle)
   brand.append(brandMark, titleStack)
-  const detailsButton = createButton(detailsExpanded ? '收起详情' : '详情', () => {
-    detailsExpanded = !detailsExpanded
-    if (detailsExpanded && activeWorkTab === 'actions' && exercises.length === 0) {
-      activeWorkTab = 'input'
-    }
-    savePreferences()
-    render()
-  }, detailsExpanded ? 'bft-tonal' : 'bft-outline')
   const collapseButton = createButton(collapsed ? '展开' : '收起', () => {
     collapsed = !collapsed
     render()
-  }, 'bft-quiet')
+  })
   const headerActions = document.createElement('div')
   headerActions.className = 'bft-header-actions'
-  headerActions.append(detailsButton, collapseButton)
+  headerActions.append(collapseButton)
   header.append(brand, headerActions)
   setupPanelDrag(header, panel)
 
@@ -2857,24 +2334,8 @@ function render(options: RenderOptions = {}): void {
   controlStack.className = 'bft-control-stack'
 
   const status = document.createElement('div')
-  status.className = `bft-status bft-status-${runtime.mode}`
+  status.className = 'bft-status'
   const current = getCurrentExercise()
-  const statusHero = document.createElement('div')
-  statusHero.className = 'bft-status-hero'
-  const progressTile = document.createElement('div')
-  progressTile.className = 'bft-progress-tile'
-  const progressLabel = document.createElement('span')
-  progressLabel.textContent = runtime.mode === 'rest' ? '休息' : '当前'
-  const progressValue = document.createElement('strong')
-  progressValue.textContent =
-    runtime.mode === 'rest'
-      ? `${runtime.restRemaining}s`
-      : current
-        ? `${runtime.exerciseIndex + 1}`
-        : `${exercises.length}`
-  progressTile.append(progressLabel, progressValue)
-  const statusCopy = document.createElement('div')
-  statusCopy.className = 'bft-status-copy'
   const statusHead = document.createElement('div')
   statusHead.className = 'bft-status-head'
   const statusTitle = document.createElement('strong')
@@ -2896,16 +2357,56 @@ function render(options: RenderOptions = {}): void {
     createMetric('当前', current ? `${runtime.exerciseIndex + 1}/${exercises.length}` : '-'),
     createMetric('休息', current ? `${current.restSeconds}s` : `${settings.beepDuration}s`),
   )
-  statusCopy.append(statusHead, statusDetail)
-  statusHero.append(progressTile, statusCopy)
-  status.append(statusHero, metricGrid)
+  status.append(statusHead, statusDetail, metricGrid)
 
-  const inputPanelParts = createInputPanel(parseResult)
+  const textarea = document.createElement('textarea')
+  textarea.className = 'bft-input'
+  textarea.wrap = 'off'
+  textarea.placeholder = '俯卧撑 00:12-00:28 3x8-12 rest45'
+  textarea.value = rawInput
+  textarea.addEventListener('input', () => {
+    const selectionStart = textarea.selectionStart
+    const selectionEnd = textarea.selectionEnd
+    rawInput = textarea.value
+    runtime.mode = runtime.mode === 'complete' ? 'idle' : runtime.mode
+    savePlan()
+    render({
+      restoreTextarea: {
+        selectionStart,
+        selectionEnd,
+      },
+    })
+  })
+
+  const onlineImportButton = createButton('在线导入', () => {
+    void importPlanFromOnline()
+  })
+  onlineImportButton.disabled = onlineImportBusy
+  const saveButton = createButton('保存', () => {
+    savePlan('已手动保存')
+    render()
+  }, 'bft-primary')
+  const insertGroup = createToolGroup('时间', [
+    createButton('插入开始', () => insertCurrentTime('start')),
+    createButton('插入结束', () => insertCurrentTime('end')),
+    createButton('示例', () => {
+      rawInput =
+        '俯卧撑 00:12-00:28 3x8-12 rest45\n深蹲 01:05-01:22 4x10 rest60'
+      savePlan()
+      render()
+    }),
+  ])
+  const fileGroup = createToolGroup('数据', [
+    createButton('导出', exportPlan),
+    createButton('导入', openImportPicker),
+    onlineImportButton,
+    saveButton,
+  ])
 
   const startPickerRow = document.createElement('div')
-  startPickerRow.className = 'bft-row bft-start-row'
+  startPickerRow.className = 'bft-row'
   const startPickerLabel = document.createElement('label')
-  startPickerLabel.className = 'bft-row bft-grow bft-start-picker'
+  startPickerLabel.className = 'bft-row bft-grow'
   const startPickerText = document.createElement('span')
   startPickerText.textContent = '从动作'
   const startPicker = document.createElement('select')
@@ -2960,9 +2461,9 @@ function render(options: RenderOptions = {}): void {
 
   const controls = document.createElement('div')
   controls.className = 'bft-row bft-control-row'
-  const skipButton = createButton('跳过休息', () => skipRest(false), 'bft-outline')
+  const skipButton = createButton('跳过休息', () => skipRest(false))
   skipButton.disabled = runtime.mode !== 'rest'
-  const pauseButton = createButton('暂停', togglePause, 'bft-tonal')
+  const pauseButton = createButton('暂停', togglePause)
   pauseButton.disabled = runtime.mode !== 'exercise' && runtime.mode !== 'rest'
   controls.append(pauseButton, skipButton)
 
@@ -2980,28 +2481,91 @@ function render(options: RenderOptions = {}): void {
     runtime.restRemaining === 0
   safetyRow.append(safetyLabel, resetButton)
 
-  const controlDeck = document.createElement('div')
-  controlDeck.className = 'bft-control-deck'
-  controlDeck.append(startPickerRow, primaryActionRow, controls, safetyRow)
+  const list = document.createElement('ul')
+  list.className = 'bft-list'
+  exercises.forEach((exercise, index) => {
+    const itemWrapper = document.createElement('li')
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.className = [
+      'bft-item',
+      index === runtime.exerciseIndex && runtime.mode !== 'idle' ? 'bft-item-active' : '',
+      index === selectedStartIndex ? 'bft-item-selected' : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+    const canSwitchItem =
+      runtime.mode === 'idle' || runtime.mode === 'complete' || !previewLocked
+    item.disabled = !canSwitchItem
+    item.addEventListener('click', () => {
+      switchToExercise(index)
+    })
+    const name = document.createElement('strong')
+    name.textContent = exercise.name
+    const meta = document.createElement('span')
+    meta.className = 'bft-muted'
+    meta.textContent = `${formatTimestamp(exercise.start)}-${formatTimestamp(exercise.end)} · ${exercise.sets} 组 · ${exercise.minReps}${exercise.maxReps === exercise.minReps ? '' : `-${exercise.maxReps}`} 次 · 休息 ${exercise.restSeconds}s`
+    item.append(name, meta)
+    itemWrapper.append(item)
+    list.append(itemWrapper)
+  })
 
-  controlStack.append(status, controlDeck, createActionStrip())
-
-  body.append(controlStack)
-  if (detailsExpanded) {
-    const detailsDrawer = document.createElement('div')
-    detailsDrawer.className = 'bft-details-drawer'
-    detailsDrawer.append(
-      createTabBar(),
-      createWorkPanel(parseResult, createExerciseList('panel'), inputPanelParts.panel),
-    )
-    body.append(detailsDrawer)
+  if (exercises.length === 0) {
+    const empty = document.createElement('li')
+    empty.className = 'bft-empty'
+    empty.textContent = '暂无有效动作'
+    list.append(empty)
   }
+
+  const inputChildren: Node[] = [textarea, insertGroup, fileGroup]
+
+  if (parseResult.errors.length > 0) {
+    const errorBox = document.createElement('div')
+    errorBox.className = 'bft-error'
+    parseResult.errors.forEach(error => {
+      const line = document.createElement('span')
+      line.textContent = error
+      errorBox.append(line)
+    })
+    inputChildren.push(errorBox)
+  }
+
+  const inputPanel = document.createElement('div')
+  inputPanel.className = 'bft-left-input'
+  const inputHeader = document.createElement('div')
+  inputHeader.className = 'bft-section-header'
+  const inputTitle = document.createElement('strong')
+  inputTitle.textContent = '时间戳录入'
+  const inputToggleButton = createButton(inputCollapsed ? '展开' : '折叠', () => {
+    inputCollapsed = !inputCollapsed
+    savePreferences()
+    render()
+  })
+  inputHeader.append(inputTitle, inputToggleButton)
+  inputPanel.append(inputHeader)
+  if (!inputCollapsed) {
+    inputPanel.append(...inputChildren)
+  }
+
+  controlStack.append(status, startPickerRow, primaryActionRow, controls, safetyRow, inputPanel)
+
+  const mainGrid = document.createElement('div')
+  mainGrid.className = 'bft-main-grid'
+  const mainLeft = document.createElement('div')
+  mainLeft.className = 'bft-main-left'
+  const mainRight = document.createElement('div')
+  mainRight.className = 'bft-main-right'
+
+  mainLeft.append(controlStack)
+  mainRight.append(createTabBar(), createWorkPanel(parseResult, list))
+  mainGrid.append(mainLeft, mainRight)
+  body.append(mainGrid)
   panel.append(header, body, resizeHandle)
   applyPanelPosition(panel)
 
   if (options.restoreTextarea) {
-    inputPanelParts.textarea.focus()
-    inputPanelParts.textarea.setSelectionRange(
+    textarea.focus()
+    textarea.setSelectionRange(
       options.restoreTextarea.selectionStart,
       options.restoreTextarea.selectionEnd,
     )
