@@ -15,7 +15,7 @@ import {
 } from './core'
 
 type Mode = 'idle' | 'exercise' | 'rest' | 'paused' | 'complete'
-type WorkTab = 'groups' | 'preview' | 'settings'
+type WorkTab = 'actions' | 'groups' | 'input' | 'settings'
 
 interface Settings {
   beepDuration: number
@@ -67,6 +67,7 @@ interface Preferences {
   previewLocked: boolean
   activeTab: WorkTab
   inputCollapsed: boolean
+  detailsExpanded: boolean
 }
 
 const panelId = 'bili-fitness-timer-panel'
@@ -85,7 +86,8 @@ let settings: Settings = { ...defaultSettings }
 let collapsed = false
 let previewLocked = true
 let inputCollapsed = false
-let activeWorkTab: WorkTab = 'groups'
+let detailsExpanded = false
+let activeWorkTab: WorkTab = 'actions'
 let groupPage = 0
 let selectedStartIndex = 0
 let panelPosition: PanelPosition | null = null
@@ -151,9 +153,13 @@ function optionalText(value: unknown): string | undefined {
 }
 
 function normalizeWorkTab(value: unknown): WorkTab {
-  return value === 'groups' || value === 'preview' || value === 'settings'
-    ? value
-    : 'groups'
+  if (value === 'preview' || value === 'actions') {
+    return 'actions'
+  }
+  if (value === 'groups' || value === 'input' || value === 'settings') {
+    return value
+  }
+  return 'actions'
 }
 
 function createEmptyGroup(title = '子分组 1'): StoredPlan {
@@ -362,8 +368,9 @@ function loadPreferences(): Preferences {
         panelPosition: null,
         panelSize: null,
         previewLocked: true,
-        activeTab: 'groups',
+        activeTab: 'actions',
         inputCollapsed: false,
+        detailsExpanded: false,
       }
     }
 
@@ -376,6 +383,7 @@ function loadPreferences(): Preferences {
       previewLocked: booleanPreference(parsed.previewLocked, true),
       activeTab: normalizeWorkTab(parsed.activeTab),
       inputCollapsed: booleanPreference(parsed.inputCollapsed, false),
+      detailsExpanded: booleanPreference(parsed.detailsExpanded, false),
     }
     if (
       position &&
@@ -409,8 +417,9 @@ function loadPreferences(): Preferences {
       panelPosition: null,
       panelSize: null,
       previewLocked: true,
-      activeTab: 'groups',
+      activeTab: 'actions',
       inputCollapsed: false,
+      detailsExpanded: false,
     }
   }
 
@@ -418,8 +427,9 @@ function loadPreferences(): Preferences {
     panelPosition: null,
     panelSize: null,
     previewLocked: true,
-    activeTab: 'groups',
+    activeTab: 'actions',
     inputCollapsed: false,
+    detailsExpanded: false,
   }
 }
 
@@ -432,8 +442,13 @@ function savePreferences(): void {
       previewLocked,
       activeTab: activeWorkTab,
       inputCollapsed,
+      detailsExpanded,
     } satisfies Preferences),
   )
+}
+
+function useDockLayout(): boolean {
+  return true
 }
 
 function isMobileViewport(): boolean {
@@ -467,6 +482,11 @@ function clampPanelSize(size: PanelSize): PanelSize {
 }
 
 function applyPanelSize(panel: HTMLElement): void {
+  if (useDockLayout()) {
+    panel.style.width = ''
+    panel.style.height = ''
+    return
+  }
   if (collapsed || isMobileViewport() || !panelSize) {
     panel.style.width = ''
     panel.style.height = ''
@@ -491,6 +511,15 @@ function clampPanelPosition(position: PanelPosition, panel: HTMLElement): PanelP
 }
 
 function applyPanelPosition(panel: HTMLElement): void {
+  if (useDockLayout()) {
+    applyPanelSize(panel)
+    panel.style.left = ''
+    panel.style.right = ''
+    panel.style.top = ''
+    panel.style.bottom = ''
+    return
+  }
+
   if (isMobileViewport()) {
     applyPanelSize(panel)
     panel.style.left = ''
@@ -521,6 +550,9 @@ function applyPanelPosition(panel: HTMLElement): void {
 function setupPanelDrag(header: HTMLElement, panel: HTMLElement): void {
   header.addEventListener('pointerdown', event => {
     if (collapsed || isMobileViewport() || event.button !== 0) {
+      return
+    }
+    if (useDockLayout()) {
       return
     }
     if ((event.target as HTMLElement).closest('button')) {
@@ -566,6 +598,9 @@ function setupPanelDrag(header: HTMLElement, panel: HTMLElement): void {
 function setupPanelResize(handle: HTMLElement, panel: HTMLElement): void {
   handle.addEventListener('pointerdown', event => {
     if (collapsed || isMobileViewport() || event.button !== 0) {
+      return
+    }
+    if (useDockLayout()) {
       return
     }
 
@@ -936,7 +971,7 @@ function startTraining(): void {
   if (exercises.length === 0) {
     return
   }
-  activeWorkTab = 'preview'
+  activeWorkTab = 'actions'
   savePreferences()
   selectedStartIndex = Math.min(selectedStartIndex, exercises.length - 1)
   runtime = {
@@ -2049,6 +2084,185 @@ function injectStyle(): void {
         max-width: 38%;
       }
     }
+    #${panelId}.bft-dock {
+      left: 50%;
+      right: auto;
+      top: auto;
+      bottom: max(8px, env(safe-area-inset-bottom));
+      width: min(calc(100vw - 16px), 960px);
+      height: auto;
+      max-height: calc(100dvh - 16px);
+      transform: translateX(-50%);
+      border-radius: 12px;
+    }
+    #${panelId}.bft-dock.bft-details-open {
+      height: min(86dvh, 760px);
+    }
+    #${panelId}.bft-dock.bft-collapsed {
+      left: auto;
+      right: max(8px, env(safe-area-inset-right));
+      bottom: max(8px, env(safe-area-inset-bottom));
+      width: auto;
+      min-width: 126px;
+      transform: none;
+    }
+    .bft-dock .bft-header {
+      min-height: 54px;
+      padding: 9px 12px;
+      cursor: default;
+      touch-action: auto;
+      background: rgba(26, 31, 34, 0.96);
+    }
+    .bft-dock .bft-header-actions .bft-button {
+      min-height: 40px;
+    }
+    .bft-dock .bft-body {
+      display: grid;
+      gap: 10px;
+      height: auto;
+      max-height: calc(100dvh - 70px);
+      padding: 10px 12px 12px;
+      overflow: auto;
+    }
+    .bft-dock.bft-details-open .bft-body {
+      height: calc(100% - 54px);
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+    .bft-dock .bft-control-stack {
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.92fr);
+      gap: 10px 12px;
+      align-items: stretch;
+      padding: 0;
+      min-height: 0;
+    }
+    .bft-dock .bft-status {
+      min-height: 0;
+      padding: 14px;
+    }
+    .bft-dock .bft-status-title {
+      font-size: 24px;
+    }
+    .bft-dock .bft-control-deck {
+      align-content: stretch;
+      padding: 10px;
+      border: 1px solid var(--bft-line);
+      border-radius: var(--bft-radius);
+      background: rgba(17, 20, 23, 0.42);
+    }
+    .bft-dock .bft-primary-training-button {
+      width: 100%;
+      min-height: 96px;
+      font-size: 21px;
+    }
+    .bft-dock .bft-button,
+    .bft-dock .bft-select,
+    .bft-dock .bft-text-input {
+      min-height: var(--bft-touch);
+    }
+    .bft-dock .bft-control-row .bft-button,
+    .bft-dock .bft-tool-row .bft-button {
+      flex: 1 1 0;
+    }
+    .bft-dock .bft-safety-row {
+      justify-content: space-between;
+    }
+    .bft-action-strip {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+      padding: 8px;
+      border: 1px solid var(--bft-line);
+      border-radius: var(--bft-radius);
+      background: rgba(26, 31, 34, 0.58);
+    }
+    .bft-strip-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+    .bft-strip-head strong,
+    .bft-strip-head span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bft-action-strip .bft-list {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0 0 2px;
+      scroll-snap-type: x proximity;
+      scrollbar-width: thin;
+    }
+    .bft-action-strip .bft-list > li {
+      flex: 0 0 min(280px, 78vw);
+      scroll-snap-align: start;
+    }
+    .bft-action-strip .bft-item {
+      height: 100%;
+      min-height: 64px;
+    }
+    .bft-details-drawer {
+      display: grid;
+      gap: 10px;
+      min-height: 0;
+      overflow: hidden;
+      padding-top: 10px;
+      border-top: 1px solid var(--bft-line);
+    }
+    .bft-details-drawer .bft-tabs {
+      flex: 0 0 auto;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .bft-details-drawer .bft-work-panel {
+      min-height: 0;
+      overflow: auto;
+    }
+    .bft-details-drawer .bft-list {
+      display: grid;
+      gap: 8px;
+    }
+    .bft-input-panel {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+    .bft-dock .bft-resize-handle {
+      display: none;
+    }
+    @media (max-width: 720px) {
+      #${panelId}.bft-dock {
+        left: 6px;
+        right: 6px;
+        bottom: max(0px, env(safe-area-inset-bottom));
+        width: auto;
+        transform: none;
+        border-radius: 12px 12px 0 0;
+      }
+      #${panelId}.bft-dock.bft-details-open {
+        height: min(88dvh, 720px);
+      }
+      .bft-dock .bft-control-stack {
+        grid-template-columns: 1fr;
+      }
+      .bft-dock .bft-status-title {
+        font-size: 21px;
+      }
+      .bft-dock .bft-primary-training-button {
+        min-height: 86px;
+        font-size: 19px;
+      }
+      .bft-details-drawer .bft-tabs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
   `
   document.head.append(style)
 }
@@ -2096,8 +2310,9 @@ function createTabBar(): HTMLElement {
   const tabs = document.createElement('div')
   tabs.className = 'bft-tabs'
   const items: Array<{ id: WorkTab; label: string }> = [
+    { id: 'actions', label: '动作' },
     { id: 'groups', label: '分组' },
-    { id: 'preview', label: '预览' },
+    { id: 'input', label: '录入' },
     { id: 'settings', label: '设置' },
   ]
   items.forEach(item => {
@@ -2143,6 +2358,132 @@ function createToolGroup(labelText: string, buttons: HTMLButtonElement[]): HTMLE
   buttonRow.append(...buttons)
   group.append(label, buttonRow)
   return group
+}
+
+function createExerciseList(mode: 'strip' | 'panel' = 'panel'): HTMLElement {
+  const list = document.createElement('ul')
+  list.className = 'bft-list'
+  exercises.forEach((exercise, index) => {
+    const itemWrapper = document.createElement('li')
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.className = [
+      'bft-item',
+      index === runtime.exerciseIndex && runtime.mode !== 'idle' ? 'bft-item-active' : '',
+      index === selectedStartIndex ? 'bft-item-selected' : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+    const canSwitchItem =
+      runtime.mode === 'idle' || runtime.mode === 'complete' || !previewLocked
+    item.disabled = !canSwitchItem
+    item.addEventListener('click', () => {
+      switchToExercise(index)
+    })
+    const name = document.createElement('strong')
+    name.textContent = exercise.name
+    const meta = document.createElement('span')
+    meta.className = 'bft-muted'
+    const prefix = mode === 'strip' ? `${index + 1}. ` : ''
+    meta.textContent = `${formatTimestamp(exercise.start)}-${formatTimestamp(exercise.end)} · ${exercise.sets} 组 · ${exercise.minReps}${exercise.maxReps === exercise.minReps ? '' : `-${exercise.maxReps}`} 次 · 休息 ${exercise.restSeconds}s`
+    name.textContent = `${prefix}${exercise.name}`
+    item.append(name, meta)
+    itemWrapper.append(item)
+    list.append(itemWrapper)
+  })
+
+  if (exercises.length === 0) {
+    const empty = document.createElement('li')
+    empty.className = 'bft-empty'
+    empty.textContent = '暂无有效动作'
+    list.append(empty)
+  }
+
+  return list
+}
+
+function createActionStrip(): HTMLElement {
+  const wrapper = document.createElement('div')
+  wrapper.className = 'bft-action-strip'
+  const head = document.createElement('div')
+  head.className = 'bft-strip-head'
+  const title = document.createElement('strong')
+  title.textContent = '动作队列'
+  const detail = document.createElement('span')
+  detail.className = 'bft-muted'
+  const current = getCurrentExercise()
+  detail.textContent = current
+    ? `当前 ${runtime.exerciseIndex + 1}/${exercises.length} · ${current.name}`
+    : `${exercises.length} 个动作`
+  head.append(title, detail)
+  wrapper.append(head, createExerciseList('strip'))
+  return wrapper
+}
+
+function createInputPanel(parseResult: ReturnType<typeof parsePlan>): {
+  panel: HTMLElement
+  textarea: HTMLTextAreaElement
+} {
+  const textarea = document.createElement('textarea')
+  textarea.className = 'bft-input'
+  textarea.wrap = 'off'
+  textarea.placeholder = '俯卧撑 00:12-00:28 3x8-12 rest45'
+  textarea.value = rawInput
+  textarea.addEventListener('input', () => {
+    const selectionStart = textarea.selectionStart
+    const selectionEnd = textarea.selectionEnd
+    rawInput = textarea.value
+    runtime.mode = runtime.mode === 'complete' ? 'idle' : runtime.mode
+    savePlan()
+    render({
+      restoreTextarea: {
+        selectionStart,
+        selectionEnd,
+      },
+    })
+  })
+
+  const onlineImportButton = createButton('在线导入', () => {
+    void importPlanFromOnline()
+  }, 'bft-outline')
+  onlineImportButton.disabled = onlineImportBusy
+  const saveButton = createButton('保存', () => {
+    savePlan('已手动保存')
+    render()
+  }, 'bft-tonal')
+  const insertGroup = createToolGroup('时间', [
+    createButton('插入开始', () => insertCurrentTime('start'), 'bft-outline'),
+    createButton('插入结束', () => insertCurrentTime('end'), 'bft-outline'),
+    createButton('示例', () => {
+      rawInput =
+        '俯卧撑 00:12-00:28 3x8-12 rest45\n深蹲 01:05-01:22 4x10 rest60'
+      savePlan()
+      render()
+    }, 'bft-quiet'),
+  ])
+  const fileGroup = createToolGroup('数据', [
+    createButton('导出', exportPlan, 'bft-quiet'),
+    createButton('导入', openImportPicker, 'bft-quiet'),
+    onlineImportButton,
+    saveButton,
+  ])
+
+  const panel = document.createElement('div')
+  panel.className = 'bft-input-panel'
+  panel.append(textarea, insertGroup, fileGroup)
+
+  if (parseResult.errors.length > 0) {
+    const errorBox = document.createElement('div')
+    errorBox.className = 'bft-error'
+    parseResult.errors.forEach(error => {
+      const line = document.createElement('span')
+      line.textContent = error
+      errorBox.append(line)
+    })
+    panel.append(errorBox)
+  }
+
+  return { panel, textarea }
 }
 
 function createTextField(
@@ -2382,9 +2723,30 @@ function createSettingsPanel(): HTMLElement {
   return panel
 }
 
-function createWorkPanel(parseResult: ReturnType<typeof parsePlan>, list: HTMLElement): HTMLElement {
+function createWorkPanel(
+  parseResult: ReturnType<typeof parsePlan>,
+  list: HTMLElement,
+  inputPanel: HTMLElement,
+): HTMLElement {
   const panel = document.createElement('div')
   panel.className = 'bft-work-panel'
+
+  if (activeWorkTab === 'actions') {
+    const lockButton = createButton(previewLocked ? '解锁切换' : '锁定切换', () => {
+      previewLocked = !previewLocked
+      savePreferences()
+      render()
+    }, 'bft-tonal')
+    panel.append(
+      createPanelHeading(
+        '动作队列',
+        previewLocked ? '训练中锁定切换' : '训练中可切换动作',
+        lockButton,
+      ),
+      list,
+    )
+    return panel
+  }
 
   if (activeWorkTab === 'groups') {
     panel.append(
@@ -2398,19 +2760,10 @@ function createWorkPanel(parseResult: ReturnType<typeof parsePlan>, list: HTMLEl
     return panel
   }
 
-  if (activeWorkTab === 'preview') {
-    const lockButton = createButton(previewLocked ? '解锁预览' : '锁定预览', () => {
-      previewLocked = !previewLocked
-      savePreferences()
-      render()
-    }, 'bft-tonal')
+  if (activeWorkTab === 'input') {
     panel.append(
-      createPanelHeading(
-        '动作预览',
-        previewLocked ? '训练中锁定切换' : '训练中可切换动作',
-        lockButton,
-      ),
-      list,
+      createPanelHeading('时间戳录入', saveStatusText),
+      inputPanel,
     )
     return panel
   }
@@ -2432,7 +2785,13 @@ function render(options: RenderOptions = {}): void {
     panel.id = panelId
     document.body.append(panel)
   }
-  panel.className = collapsed ? 'bft-collapsed' : ''
+  panel.className = [
+    'bft-dock',
+    collapsed ? 'bft-collapsed' : '',
+    detailsExpanded ? 'bft-details-open' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
   applyPanelPosition(panel)
 
   const parseResult = parsePlan(rawInput)
@@ -2469,13 +2828,21 @@ function render(options: RenderOptions = {}): void {
   subtitle.textContent = activePlanTitle || getCurrentStorageId()
   titleStack.append(title, subtitle)
   brand.append(brandMark, titleStack)
+  const detailsButton = createButton(detailsExpanded ? '收起详情' : '详情', () => {
+    detailsExpanded = !detailsExpanded
+    if (detailsExpanded && activeWorkTab === 'actions' && exercises.length === 0) {
+      activeWorkTab = 'input'
+    }
+    savePreferences()
+    render()
+  }, detailsExpanded ? 'bft-tonal' : 'bft-outline')
   const collapseButton = createButton(collapsed ? '展开' : '收起', () => {
     collapsed = !collapsed
     render()
   }, 'bft-quiet')
   const headerActions = document.createElement('div')
   headerActions.className = 'bft-header-actions'
-  headerActions.append(collapseButton)
+  headerActions.append(detailsButton, collapseButton)
   header.append(brand, headerActions)
   setupPanelDrag(header, panel)
 
@@ -2533,49 +2900,7 @@ function render(options: RenderOptions = {}): void {
   statusHero.append(progressTile, statusCopy)
   status.append(statusHero, metricGrid)
 
-  const textarea = document.createElement('textarea')
-  textarea.className = 'bft-input'
-  textarea.wrap = 'off'
-  textarea.placeholder = '俯卧撑 00:12-00:28 3x8-12 rest45'
-  textarea.value = rawInput
-  textarea.addEventListener('input', () => {
-    const selectionStart = textarea.selectionStart
-    const selectionEnd = textarea.selectionEnd
-    rawInput = textarea.value
-    runtime.mode = runtime.mode === 'complete' ? 'idle' : runtime.mode
-    savePlan()
-    render({
-      restoreTextarea: {
-        selectionStart,
-        selectionEnd,
-      },
-    })
-  })
-
-  const onlineImportButton = createButton('在线导入', () => {
-    void importPlanFromOnline()
-  }, 'bft-outline')
-  onlineImportButton.disabled = onlineImportBusy
-  const saveButton = createButton('保存', () => {
-    savePlan('已手动保存')
-    render()
-  }, 'bft-tonal')
-  const insertGroup = createToolGroup('时间', [
-    createButton('插入开始', () => insertCurrentTime('start'), 'bft-outline'),
-    createButton('插入结束', () => insertCurrentTime('end'), 'bft-outline'),
-    createButton('示例', () => {
-      rawInput =
-        '俯卧撑 00:12-00:28 3x8-12 rest45\n深蹲 01:05-01:22 4x10 rest60'
-      savePlan()
-      render()
-    }, 'bft-quiet'),
-  ])
-  const fileGroup = createToolGroup('数据', [
-    createButton('导出', exportPlan, 'bft-quiet'),
-    createButton('导入', openImportPicker, 'bft-quiet'),
-    onlineImportButton,
-    saveButton,
-  ])
+  const inputPanelParts = createInputPanel(parseResult)
 
   const startPickerRow = document.createElement('div')
   startPickerRow.className = 'bft-row bft-start-row'
@@ -2659,91 +2984,24 @@ function render(options: RenderOptions = {}): void {
   controlDeck.className = 'bft-control-deck'
   controlDeck.append(startPickerRow, primaryActionRow, controls, safetyRow)
 
-  const list = document.createElement('ul')
-  list.className = 'bft-list'
-  exercises.forEach((exercise, index) => {
-    const itemWrapper = document.createElement('li')
-    const item = document.createElement('button')
-    item.type = 'button'
-    item.className = [
-      'bft-item',
-      index === runtime.exerciseIndex && runtime.mode !== 'idle' ? 'bft-item-active' : '',
-      index === selectedStartIndex ? 'bft-item-selected' : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-    const canSwitchItem =
-      runtime.mode === 'idle' || runtime.mode === 'complete' || !previewLocked
-    item.disabled = !canSwitchItem
-    item.addEventListener('click', () => {
-      switchToExercise(index)
-    })
-    const name = document.createElement('strong')
-    name.textContent = exercise.name
-    const meta = document.createElement('span')
-    meta.className = 'bft-muted'
-    meta.textContent = `${formatTimestamp(exercise.start)}-${formatTimestamp(exercise.end)} · ${exercise.sets} 组 · ${exercise.minReps}${exercise.maxReps === exercise.minReps ? '' : `-${exercise.maxReps}`} 次 · 休息 ${exercise.restSeconds}s`
-    item.append(name, meta)
-    itemWrapper.append(item)
-    list.append(itemWrapper)
-  })
+  controlStack.append(status, controlDeck, createActionStrip())
 
-  if (exercises.length === 0) {
-    const empty = document.createElement('li')
-    empty.className = 'bft-empty'
-    empty.textContent = '暂无有效动作'
-    list.append(empty)
+  body.append(controlStack)
+  if (detailsExpanded) {
+    const detailsDrawer = document.createElement('div')
+    detailsDrawer.className = 'bft-details-drawer'
+    detailsDrawer.append(
+      createTabBar(),
+      createWorkPanel(parseResult, createExerciseList('panel'), inputPanelParts.panel),
+    )
+    body.append(detailsDrawer)
   }
-
-  const inputChildren: Node[] = [textarea, insertGroup, fileGroup]
-
-  if (parseResult.errors.length > 0) {
-    const errorBox = document.createElement('div')
-    errorBox.className = 'bft-error'
-    parseResult.errors.forEach(error => {
-      const line = document.createElement('span')
-      line.textContent = error
-      errorBox.append(line)
-    })
-    inputChildren.push(errorBox)
-  }
-
-  const inputPanel = document.createElement('div')
-  inputPanel.className = 'bft-left-input'
-  const inputHeader = document.createElement('div')
-  inputHeader.className = 'bft-section-header'
-  const inputTitle = document.createElement('strong')
-  inputTitle.textContent = '时间戳录入'
-  const inputToggleButton = createButton(inputCollapsed ? '展开' : '折叠', () => {
-    inputCollapsed = !inputCollapsed
-    savePreferences()
-    render()
-  }, 'bft-quiet')
-  inputHeader.append(inputTitle, inputToggleButton)
-  inputPanel.append(inputHeader)
-  if (!inputCollapsed) {
-    inputPanel.append(...inputChildren)
-  }
-
-  controlStack.append(status, controlDeck, inputPanel)
-
-  const mainGrid = document.createElement('div')
-  mainGrid.className = 'bft-main-grid'
-  const mainLeft = document.createElement('div')
-  mainLeft.className = 'bft-main-left'
-  const mainRight = document.createElement('div')
-  mainRight.className = 'bft-main-right'
-
-  mainLeft.append(controlStack)
-  mainRight.append(createTabBar(), createWorkPanel(parseResult, list))
-  mainGrid.append(mainLeft, mainRight)
-  body.append(mainGrid)
   panel.append(header, body, resizeHandle)
   applyPanelPosition(panel)
 
   if (options.restoreTextarea) {
-    textarea.focus()
-    textarea.setSelectionRange(
+    inputPanelParts.textarea.focus()
+    inputPanelParts.textarea.setSelectionRange(
       options.restoreTextarea.selectionStart,
       options.restoreTextarea.selectionEnd,
     )
