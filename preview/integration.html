@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Bili Fitness Timer · Store Integration</title>
+  </head>
+  <body>
+    <main class="integration-page">
+      <section class="integration-video-column">
+        <div class="bpx-player-container integration-player">
+          <video controls muted aria-label="Mock workout video"></video>
+        </div>
+        <div class="integration-actions">点赞　投币　收藏　分享</div>
+        <section id="commentapp" class="integration-comments">
+          <h2>评论</h2>
+          <p>训练流程 mock video 验证页</p>
+        </section>
+      </section>
+      <aside class="integration-recommendations">接下来播放</aside>
+    </main>
+    <div id="integration-root"></div>
+    <output id="integration-status" hidden></output>
+    <script type="module" src="/preview/integration.tsx"></script>
+  </body>
+</html>

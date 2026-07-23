@@ -38,3 +38,8 @@ test-results/
 *.local
 .DS_Store
 Thumbs.db
+
+# v2 preview/automation scratch (not release assets)
+output/
+.playwright-cli/
+preview/screenshots/

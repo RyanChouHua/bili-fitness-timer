@@ -1,12 +1,13 @@
 import { resolve } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 
+const version = '0.5.0'
 const rawBaseUrl = 'https://raw.githubusercontent.com/RyanChouHua/bili-fitness-timer/main'
 
 const userscriptBanner = `// ==UserScript==
 // @name         Bilibili Fitness Timer
 // @namespace    https://github.com/RyanChouHua/bili-fitness-timer
-// @version      0.4.17
+// @version      ${version}
 // @description  Turn Bilibili video clips into workout intervals with sets and rest timers.
 // @match        https://www.bilibili.com/*
 // @match        https://m.bilibili.com/*
@@ -47,7 +48,7 @@ export default defineConfig({
     sourcemap: false,
     lib: {
       entry: resolve(__dirname, 'src/main.ts'),
-      name: 'BiliFitnessTimer',
+      name: 'BiliFitnessTimerV2',
       formats: ['iife'],
       fileName: () => 'bili-fitness-timer.user.js',
     },
